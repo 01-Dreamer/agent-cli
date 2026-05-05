@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "build": "tsc && node scripts/copy-assets.cjs",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,7 +20,16 @@
   },
   "homepage": "https://github.com/01-Dreamer/agent-cli#readme",
   "dependencies": {
+    "commander": "^14.0.3",
     "dotenv": "^17.4.2",
     "openai": "^6.36.0"
+  },
+  "bin": {
+    "agent-cli": "./dist/bin/agent-cli.js"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.3"
   }
 }

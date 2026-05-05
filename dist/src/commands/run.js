@@ -64,8 +64,8 @@ async function runAgent() {
         path.join(__dirname, '..', 'skills', 'builtin'),
         // Built-in skills while running from the TypeScript source tree.
         path.join(process.cwd(), 'src', 'skills', 'builtin'),
-        // Workspace skills configured by the user for this project.
-        path.join(process.cwd(), '.agent-cli', 'skills'),
+        // Workspace skills shared by agent tools for this project.
+        path.join(process.cwd(), '.agents', 'skills'),
     ]);
     const allDiscoveredSkills = skillManager.getAllSkills();
     if (allDiscoveredSkills.length > 0) {

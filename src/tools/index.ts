@@ -5,6 +5,11 @@ import { WriteFileTool } from './write-file';
 import { ListDirectoryTool } from './ls';
 import { ShellTool } from './shell';
 import { WebSearchTool } from './web-search';
+import { GlobTool } from './glob';
+import { GrepTool } from './grep';
+import { ReadManyFilesTool } from './read-many-files';
+import { ReplaceInFileTool } from './replace-in-file';
+import { WebFetchTool } from './web-fetch';
 
 // 在这里实例化所有的工具类
 const registeredTools: Tool[] = [
@@ -12,7 +17,12 @@ const registeredTools: Tool[] = [
     new WriteFileTool(),
     new ListDirectoryTool(),
     new ShellTool(),
-    new WebSearchTool()
+    new WebSearchTool(),
+    new GlobTool(),
+    new GrepTool(),
+    new ReadManyFilesTool(),
+    new ReplaceInFileTool(),
+    new WebFetchTool()
 ];
 
 // 组装传给大模型的 tools 定义

@@ -1,11 +1,14 @@
-"use strict";
-Object.defineProperty(exports, "__esModule", { value: true });
-exports.WebFetchTool = void 0;
-const types_1 = require("../types");
-class WebFetchTool extends types_1.Tool {
-    name = "web_fetch";
-    description = "WebFetch: Fetches an http/https URL and returns readable text content. Does not require a special API key.";
-    parameters = {
+import { Tool } from '../types';
+
+export interface WebFetchArgs {
+    url: string;
+    maxChars?: number;
+}
+
+export class WebFetchTool extends Tool<WebFetchArgs> {
+    readonly name = "web_fetch";
+    readonly description = "WebFetch: Fetches an http/https URL and returns readable text content. Does not require a special API key.";
+    readonly parameters = {
         type: "object",
         properties: {
             url: { type: "string", description: "The http or https URL to fetch." },
@@ -13,12 +16,14 @@ class WebFetchTool extends types_1.Tool {
         },
         required: ["url"],
     };
-    async execute(args) {
+
+    async execute(args: WebFetchArgs): Promise<string> {
         try {
             const url = new URL(args.url);
             if (url.protocol !== 'http:' && url.protocol !== 'https:') {
                 return JSON.stringify({ error: "Only http and https URLs are supported." });
             }
+
             const controller = new AbortController();
             const timeout = setTimeout(() => controller.abort(), 10000);
             const response = await fetch(url.href, {
@@ -29,6 +34,7 @@ class WebFetchTool extends types_1.Tool {
                 },
             });
             clearTimeout(timeout);
+
             const raw = await response.text();
             const contentType = response.headers.get('content-type') || '';
             const text = contentType.includes('text/html')
@@ -40,6 +46,7 @@ class WebFetchTool extends types_1.Tool {
                     .trim()
                 : raw;
             const maxChars = Math.max(1, args.maxChars ?? 20000);
+
             return JSON.stringify({
                 url: url.href,
                 status: response.status,
@@ -47,10 +54,8 @@ class WebFetchTool extends types_1.Tool {
                 truncated: text.length > maxChars,
                 content: text.slice(0, maxChars),
             }, null, 2);
-        }
-        catch (error) {
+        } catch (error: any) {
             return JSON.stringify({ error: `WebFetch failed: ${error.message}` });
         }
     }
 }
-exports.WebFetchTool = WebFetchTool;

@@ -40,6 +40,57 @@ const index_1 = require("../tools/index");
 const skillManager_1 = require("../skills/skillManager");
 const skillLoader_1 = require("../skills/skillLoader");
 const path = __importStar(require("path"));
+const color = {
+    reset: "\x1b[0m",
+    dim: "\x1b[2m",
+    bold: "\x1b[1m",
+    cyan: "\x1b[36m",
+    green: "\x1b[32m",
+    yellow: "\x1b[33m",
+    red: "\x1b[31m",
+    gray: "\x1b[90m",
+};
+function paint(value, ...ansi) {
+    return process.stdout.isTTY ? `${ansi.join('')}${value}${color.reset}` : value;
+}
+function truncate(value, maxLength) {
+    return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
+}
+function clearStatusLine() {
+    if (process.stdout.isTTY) {
+        process.stdout.clearLine(0);
+        process.stdout.cursorTo(0);
+    }
+    else {
+        process.stdout.write("\n");
+    }
+}
+function writeStatus(message) {
+    process.stdout.write(`${paint("...", color.gray)} ${message}\r`);
+}
+function printHeader(model) {
+    console.log();
+    console.log(`${paint("agent-cli", color.cyan, color.bold)} ${paint("workspace agent", color.gray)}`);
+    console.log(paint(`model ${model}`, color.gray));
+}
+function printSessionSummary(skillCount, toolCount) {
+    console.log(paint(`${skillCount} skills loaded | ${toolCount} tools available | type exit to quit`, color.gray));
+    console.log();
+}
+function printToolCall(name, args) {
+    console.log();
+    console.log(`${paint("tool", color.yellow)} ${paint(name, color.bold)} ${paint(JSON.stringify(args), color.gray)}`);
+}
+function printToolResult(result, isError = false) {
+    const label = isError ? paint("x", color.red) : paint("ok", color.green);
+    console.log(`${paint("  ", color.gray)}${label} ${paint(truncate(result.replace(/\s+/g, ' ').trim(), 160), color.gray)}`);
+}
+function printAssistant(content) {
+    console.log();
+    console.log(paint("agent-cli", color.cyan, color.bold));
+    console.log(content ?? "");
+    console.log();
+}
 async function loadSkillsFromDirs(skillManager, dirPaths) {
     const visitedDirs = new Set();
     for (const dirPath of dirPaths) {
@@ -56,8 +107,7 @@ async function runAgent() {
         input: process.stdin,
         output: process.stdout
     });
-    console.log(`\nWelcome to the Agent CLI using model: ${openai_1.DEFAULT_MODEL}`);
-    console.log("Type 'exit' or 'quit' to end the conversation.\n");
+    printHeader(openai_1.DEFAULT_MODEL);
     const skillManager = new skillManager_1.SkillManager();
     await loadSkillsFromDirs(skillManager, [
         // Built-in skills after compilation, e.g. dist/src/skills/builtin.
@@ -68,9 +118,10 @@ async function runAgent() {
         path.join(process.cwd(), '.agents', 'skills'),
     ]);
     const allDiscoveredSkills = skillManager.getAllSkills();
-    if (allDiscoveredSkills.length > 0) {
-        console.log(`Loaded ${allDiscoveredSkills.length} skills: ${skillManager.getSkillNames().join(', ')}`);
-    }
+    const toolNames = index_1.definitions
+        .filter((definition) => definition.type === "function")
+        .map((definition) => definition.function.name);
+    printSessionSummary(allDiscoveredSkills.length, toolNames.length);
     const availableSkills = skillManager.getAllSkills();
     let skillsPrompt = "";
     if (availableSkills.length > 0) {
@@ -79,7 +130,7 @@ async function runAgent() {
             skillsPrompt += `\n### Skill: ${skill.name}\n**Description**: ${skill.description}\n**Instructions**:\n${skill.body}\n`;
         }
     }
-    const systemPrompt = `You are Gemini CLI, an interactive CLI agent specializing in software engineering tasks. You are currently operating in **Default** mode. Your primary goal is to help users safely and effectively.
+    const systemPrompt = `You are agent-cli, an interactive CLI agent specializing in software engineering tasks. You are currently operating in **Default** mode. Your primary goal is to help users safely and effectively.
 
 - **System Context & Awareness:** You are running directly on the user's system via Node.js. For system facts (e.g. current date, OS architecture), you MUST use the \`shell\` tool to execute standard bash commands (like \`date\`, \`uname\`) rather than guessing, hallucinating, or searching the web.
 - **Tool Efficiency:** Minimize the total number of tool calls. If you need several pieces of information at once (e.g., system specs), write a single \`shell\` tool command using \`&&\` or \`;\` rather than calling the \`shell\` tool many separate times. 
@@ -88,9 +139,18 @@ async function runAgent() {
         { role: "system", content: systemPrompt }
     ];
     while (true) {
-        const userInput = await rl.question("You: ");
+        let userInput;
+        try {
+            userInput = await rl.question(paint("> ", color.cyan, color.bold));
+        }
+        catch (error) {
+            if (error?.code === 'ERR_USE_AFTER_CLOSE') {
+                break;
+            }
+            throw error;
+        }
         if (userInput.trim().toLowerCase() === 'exit' || userInput.trim().toLowerCase() === 'quit') {
-            console.log("Goodbye!");
+            console.log(paint("agent-cli session closed.", color.gray));
             rl.close();
             break;
         }
@@ -105,10 +165,10 @@ async function runAgent() {
                 stepCount++;
                 // 给用户一点正在思考的反馈提示
                 if (stepCount > 1) {
-                    process.stdout.write(" [代理正在根据工具结果继续思考...]\r");
+                    writeStatus("thinking with tool results...");
                 }
                 else {
-                    process.stdout.write(" [代理正在思考...]\r");
+                    writeStatus("thinking...");
                 }
                 const chatCompletion = await openai_1.openai.chat.completions.create({
                     messages: messages,
@@ -118,8 +178,7 @@ async function runAgent() {
                     stream: false,
                 });
                 // 清除思考提示
-                process.stdout.clearLine(0);
-                process.stdout.cursorTo(0);
+                clearStatusLine();
                 const responseMessage = chatCompletion.choices[0].message;
                 messages.push(responseMessage);
                 if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
@@ -128,21 +187,21 @@ async function runAgent() {
                         if (toolCall.type === "function") {
                             const functionName = toolCall.function.name;
                             const functionArgs = JSON.parse(toolCall.function.arguments);
-                            console.log(` ⚙️  [工具调用] ${functionName}(${JSON.stringify(functionArgs)})`);
+                            printToolCall(functionName, functionArgs);
                             let functionResponse = "";
                             if (index_1.implementations[functionName]) {
                                 try {
                                     functionResponse = await index_1.implementations[functionName](functionArgs);
-                                    console.log(` └─ [结果] ${functionResponse.slice(0, 100)}${functionResponse.length > 100 ? '...' : ''}`);
+                                    printToolResult(functionResponse);
                                 }
                                 catch (err) {
                                     functionResponse = JSON.stringify({ error: err.message || "执行期间发生错误" });
-                                    console.log(` └─ [错误] ${functionResponse}`);
+                                    printToolResult(functionResponse, true);
                                 }
                             }
                             else {
                                 functionResponse = JSON.stringify({ error: "Tool not found" });
-                                console.log(` └─ [错误] 工具不存在`);
+                                printToolResult(functionResponse, true);
                             }
                             // 必须把工具请求的结果还给大模型
                             messages.push({
@@ -156,16 +215,17 @@ async function runAgent() {
                 }
                 else {
                     // 没有发现工具调用行为，说明代理已经决定向用户输出最终答案文本
-                    console.log(`\nAI: ${responseMessage.content}\n`);
+                    printAssistant(responseMessage.content);
                     isAgentFinished = true;
                 }
             }
             if (stepCount >= MAX_STEPS) {
-                console.log(`\n[系统警告] 代理推理步数达到最大阈值 (${MAX_STEPS})，被强制终止。\n`);
+                console.log(`${paint("warning", color.yellow)} agent reached max reasoning steps (${MAX_STEPS}).`);
             }
         }
         catch (error) {
-            console.error("\nError calling OpenAI API:", error.message || error);
+            clearStatusLine();
+            console.error(`${paint("error", color.red)} OpenAI API call failed:`, error.message || error);
         }
     }
 }

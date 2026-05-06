@@ -1,5 +1,5 @@
 ---
-name: Random Number
+name: random-number
 description: Generates random integers by running a bundled script.
 ---
 # Instructions
@@ -8,10 +8,11 @@ Use this skill when the user asks for a random number, dice roll, lottery-style 
 
 Always use the `shell` tool to run the bundled script. Do not invent the number yourself.
 
-Run the script from the tool workspace with this command shape:
+Use the `<base_directory>` value returned by `activate_skill` to build the
+script path. Run the script with this command shape:
 
 ```bash
-node ../.agents/skills/random-number/scripts/random-number.js MIN MAX
+node <base_directory>/scripts/random-number.js MIN MAX
 ```
 
 Replace `MIN` and `MAX` with the requested integer range. If the user does not provide a range, use `1 100`.

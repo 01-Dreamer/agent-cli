@@ -22,7 +22,11 @@ async function main() {
   const builtinSkillsSource = path.join(process.cwd(), 'src', 'skills', 'builtin');
   const builtinSkillsTarget = path.join(process.cwd(), 'dist', 'src', 'skills', 'builtin');
 
+  await fs.rm(builtinSkillsTarget, { recursive: true, force: true });
   await copyDir(builtinSkillsSource, builtinSkillsTarget);
+
+  const cliEntry = path.join(process.cwd(), 'dist', 'bin', 'agent-cli.js');
+  await fs.chmod(cliEntry, 0o755);
 }
 
 main().catch((error) => {

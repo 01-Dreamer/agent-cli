@@ -33,74 +33,147 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.FRONTMATTER_REGEX = void 0;
+exports.parseFrontmatter = parseFrontmatter;
 exports.loadSkillsFromDir = loadSkillsFromDir;
 exports.loadSkillFromFile = loadSkillFromFile;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?/;
-async function loadSkillsFromDir(dirPath) {
-    const skills = [];
-    try {
-        const stats = await fs.stat(dirPath);
-        if (!stats.isDirectory())
-            return skills;
-        const files = await searchForSkillFiles(dirPath);
-        for (const file of files) {
-            const skill = await loadSkillFromFile(file);
-            if (skill)
-                skills.push(skill);
-        }
-    }
-    catch (e) {
-        // directory doesn't exist or is inaccessible
-    }
-    return skills;
+exports.FRONTMATTER_REGEX = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n([\s\S]*))?/;
+/**
+ * Parses frontmatter content using a small YAML-compatible parser.
+ *
+ * This follows Gemini CLI's behavior for the skill fields agent-cli supports:
+ * `name` and `description`, including indented fields, quoted values,
+ * missing spaces after colons, and multi-line descriptions.
+ */
+function parseFrontmatter(content) {
+    const simple = parseSimpleFrontmatter(content);
+    if (!simple)
+        return null;
+    return {
+        name: unquote(simple.name),
+        description: unquote(simple.description),
+    };
 }
-async function searchForSkillFiles(dir) {
-    const result = [];
-    async function scan(currentDir) {
-        try {
-            const entries = await fs.readdir(currentDir, { withFileTypes: true });
-            for (const entry of entries) {
-                if (entry.name === 'node_modules' || entry.name === '.git')
-                    continue;
-                const fullPath = path.join(currentDir, entry.name);
-                if (entry.isDirectory()) {
-                    await scan(fullPath);
+function parseSimpleFrontmatter(content) {
+    const lines = content.split(/\r?\n/);
+    let name;
+    let description;
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        const nameMatch = line.match(/^\s*name:\s*(.*)$/);
+        if (nameMatch) {
+            name = nameMatch[1].trim();
+            continue;
+        }
+        const descMatch = line.match(/^\s*description:\s*(.*)$/);
+        if (descMatch) {
+            const descLines = [descMatch[1].trim()];
+            while (i + 1 < lines.length) {
+                const nextLine = lines[i + 1];
+                if (nextLine.match(/^[ \t]+\S/)) {
+                    descLines.push(nextLine.trim());
+                    i++;
                 }
-                else if (entry.name === 'SKILL.md') {
-                    result.push(fullPath);
+                else {
+                    break;
                 }
             }
-        }
-        catch (e) {
-            // ignore permission errors
+            description = descLines.filter(Boolean).join(' ');
+            continue;
         }
     }
-    await scan(dir);
-    return result;
+    if (name !== undefined && description !== undefined) {
+        return { name, description };
+    }
+    return null;
 }
+function unquote(value) {
+    const trimmed = value.trim();
+    if ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+        (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+        return trimmed.slice(1, -1);
+    }
+    return trimmed;
+}
+/**
+ * Discovers and loads all skills in the provided directory.
+ */
+async function loadSkillsFromDir(dir) {
+    const discoveredSkills = [];
+    try {
+        const absoluteSearchPath = path.resolve(dir);
+        const stats = await fs.stat(absoluteSearchPath).catch(() => null);
+        if (!stats || !stats.isDirectory()) {
+            return [];
+        }
+        const skillFiles = await findSkillFiles(absoluteSearchPath);
+        for (const skillFile of skillFiles) {
+            const metadata = await loadSkillFromFile(skillFile);
+            if (metadata) {
+                discoveredSkills.push(metadata);
+            }
+        }
+        if (discoveredSkills.length === 0) {
+            const files = await fs.readdir(absoluteSearchPath);
+            if (files.length > 0) {
+                console.debug(`Failed to load skills from ${absoluteSearchPath}. The directory is not empty but no valid skills were discovered. Please ensure SKILL.md files are present in subdirectories and have valid frontmatter.`);
+            }
+        }
+    }
+    catch (error) {
+        console.warn(`Error discovering skills in ${dir}:`, error);
+    }
+    return discoveredSkills;
+}
+async function findSkillFiles(absoluteSearchPath) {
+    const files = [];
+    const rootSkillFile = path.join(absoluteSearchPath, 'SKILL.md');
+    if (await isFile(rootSkillFile)) {
+        files.push(rootSkillFile);
+    }
+    const entries = await fs.readdir(absoluteSearchPath, { withFileTypes: true });
+    for (const entry of entries) {
+        if (!entry.isDirectory())
+            continue;
+        if (entry.name === 'node_modules' || entry.name === '.git')
+            continue;
+        const skillFile = path.join(absoluteSearchPath, entry.name, 'SKILL.md');
+        if (await isFile(skillFile)) {
+            files.push(skillFile);
+        }
+    }
+    return files.sort();
+}
+async function isFile(filePath) {
+    const stats = await fs.stat(filePath).catch(() => null);
+    return Boolean(stats?.isFile());
+}
+/**
+ * Loads a single skill from a SKILL.md file.
+ */
 async function loadSkillFromFile(filePath) {
     try {
         const content = await fs.readFile(filePath, 'utf-8');
-        const match = content.match(FRONTMATTER_REGEX);
-        if (!match)
+        const match = content.match(exports.FRONTMATTER_REGEX);
+        if (!match) {
             return null;
-        const frontmatterStr = match[1];
-        const body = match[2]?.trim() ?? '';
-        const nameMatch = frontmatterStr.match(/name:\s*(.*)/);
-        const descMatch = frontmatterStr.match(/description:\s*(.*)/);
-        if (nameMatch && descMatch) {
-            return {
-                name: nameMatch[1].trim(),
-                description: descMatch[1].trim(),
-                location: filePath,
-                body
-            };
         }
+        const frontmatter = parseFrontmatter(match[1]);
+        if (!frontmatter) {
+            return null;
+        }
+        const sanitizedName = frontmatter.name.replace(/[:\\/<>*?"|]/g, '-');
+        return {
+            name: sanitizedName,
+            description: frontmatter.description,
+            location: filePath,
+            body: match[2]?.trim() ?? '',
+        };
     }
-    catch (e) {
-        // Failed to parse
+    catch (error) {
+        console.debug(`Error parsing skill file ${filePath}:`, error);
+        return null;
     }
-    return null;
 }

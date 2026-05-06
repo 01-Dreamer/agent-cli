@@ -38,7 +38,6 @@ const readline = __importStar(require("readline/promises"));
 const openai_1 = require("../api/openai");
 const index_1 = require("../tools/index");
 const skillManager_1 = require("../skills/skillManager");
-const skillLoader_1 = require("../skills/skillLoader");
 const path = __importStar(require("path"));
 const color = {
     reset: "\x1b[0m",
@@ -91,17 +90,6 @@ function printAssistant(content) {
     console.log(content ?? "");
     console.log();
 }
-async function loadSkillsFromDirs(skillManager, dirPaths) {
-    const visitedDirs = new Set();
-    for (const dirPath of dirPaths) {
-        const absoluteDir = path.resolve(dirPath);
-        if (visitedDirs.has(absoluteDir))
-            continue;
-        visitedDirs.add(absoluteDir);
-        const skills = await (0, skillLoader_1.loadSkillsFromDir)(absoluteDir);
-        skillManager.addSkills(skills);
-    }
-}
 async function runAgent() {
     const rl = readline.createInterface({
         input: process.stdin,
@@ -109,32 +97,31 @@ async function runAgent() {
     });
     printHeader(openai_1.DEFAULT_MODEL);
     const skillManager = new skillManager_1.SkillManager();
-    await loadSkillsFromDirs(skillManager, [
-        // Built-in skills after compilation, e.g. dist/src/skills/builtin.
-        path.join(__dirname, '..', 'skills', 'builtin'),
-        // Built-in skills while running from the TypeScript source tree.
-        path.join(process.cwd(), 'src', 'skills', 'builtin'),
-        // Workspace skills shared by agent tools for this project.
-        path.join(process.cwd(), '.agents', 'skills'),
-    ]);
+    await skillManager.discoverSkills({
+        isTrusted: true,
+        builtinSkillsDir: path.join(__dirname, '..', 'skills', 'builtin'),
+    });
+    const { definitions, implementations } = (0, index_1.createToolRegistry)(skillManager);
     const allDiscoveredSkills = skillManager.getAllSkills();
-    const toolNames = index_1.definitions
+    const toolNames = definitions
         .filter((definition) => definition.type === "function")
         .map((definition) => definition.function.name);
     printSessionSummary(allDiscoveredSkills.length, toolNames.length);
-    const availableSkills = skillManager.getAllSkills();
+    const availableSkills = skillManager.getSkills();
     let skillsPrompt = "";
     if (availableSkills.length > 0) {
-        skillsPrompt = `\n\n- **Available Skills:** You have access to the following skills. If a user asks you to perform a task and a skill exists for it, use the provided instructions in the skill body to complete it.\n`;
+        skillsPrompt = `\n\n# Available Agent Skills\n\nYou have access to the following specialized skills. To activate a skill and receive its detailed instructions, call the \`activate_skill\` tool with the skill's name.\n\n<available_skills>\n`;
         for (const skill of availableSkills) {
-            skillsPrompt += `\n### Skill: ${skill.name}\n**Description**: ${skill.description}\n**Instructions**:\n${skill.body}\n`;
+            skillsPrompt += `  <skill>\n    <name>${skill.name}</name>\n    <description>${skill.description}</description>\n    <location>${skill.location}</location>\n  </skill>\n`;
         }
+        skillsPrompt += `</available_skills>`;
     }
     const systemPrompt = `You are agent-cli, an interactive CLI agent specializing in software engineering tasks. You are currently operating in **Default** mode. Your primary goal is to help users safely and effectively.
 
 - **System Context & Awareness:** You are running directly on the user's system via Node.js. For system facts (e.g. current date, OS architecture), you MUST use the \`shell\` tool to execute standard bash commands (like \`date\`, \`uname\`) rather than guessing, hallucinating, or searching the web.
 - **Tool Efficiency:** Minimize the total number of tool calls. If you need several pieces of information at once (e.g., system specs), write a single \`shell\` tool command using \`&&\` or \`;\` rather than calling the \`shell\` tool many separate times. 
-- **Non-Interactive Execution:** Do your best to complete the task at hand autonomously. Explain your thought process briefly, gather the information efficiently, and synthesize the result for the user.${skillsPrompt}`;
+- **Non-Interactive Execution:** Do your best to complete the task at hand autonomously. Explain your thought process briefly, gather the information efficiently, and synthesize the result for the user.
+- **Skill Guidance:** Once a skill is activated via \`activate_skill\`, its instructions and resources are returned wrapped in \`<activated_skill>\` tags. You MUST treat the content within \`<instructions>\` as expert procedural guidance for the duration of the task.${skillsPrompt}`;
     const messages = [
         { role: "system", content: systemPrompt }
     ];
@@ -173,7 +160,7 @@ async function runAgent() {
                 const chatCompletion = await openai_1.openai.chat.completions.create({
                     messages: messages,
                     model: openai_1.DEFAULT_MODEL,
-                    tools: index_1.definitions.length > 0 ? index_1.definitions : undefined,
+                    tools: definitions.length > 0 ? definitions : undefined,
                     tool_choice: "auto",
                     stream: false,
                 });
@@ -189,9 +176,9 @@ async function runAgent() {
                             const functionArgs = JSON.parse(toolCall.function.arguments);
                             printToolCall(functionName, functionArgs);
                             let functionResponse = "";
-                            if (index_1.implementations[functionName]) {
+                            if (implementations[functionName]) {
                                 try {
-                                    functionResponse = await index_1.implementations[functionName](functionArgs);
+                                    functionResponse = await implementations[functionName](functionArgs);
                                     printToolResult(functionResponse);
                                 }
                                 catch (err) {

@@ -6,7 +6,7 @@ export interface GlobArgs {
 }
 export declare class GlobTool extends Tool<GlobArgs> {
     readonly name = "glob";
-    readonly description = "Glob: Finds files in the workspace by glob pattern, similar to Gemini CLI's glob tool.";
+    readonly description = "Glob: Finds files in the workspace by glob pattern.";
     readonly parameters: {
         type: string;
         properties: {

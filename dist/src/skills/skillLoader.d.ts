@@ -21,7 +21,7 @@ export declare const FRONTMATTER_REGEX: RegExp;
 /**
  * Parses frontmatter content using a small YAML-compatible parser.
  *
- * This follows Gemini CLI's behavior for the skill fields agent-cli supports:
+ * This parser supports the skill fields agent-cli currently uses:
  * `name` and `description`, including indented fields, quoted values,
  * missing spaces after colons, and multi-line descriptions.
  */

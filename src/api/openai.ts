@@ -1,7 +1,7 @@
 import * as dotenv from 'dotenv';
 import { OpenAI } from 'openai';
 
-dotenv.config();
+dotenv.config({ quiet: true });
 
 export const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,

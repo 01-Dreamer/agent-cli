@@ -5,11 +5,11 @@ const commander_1 = require("commander");
 const run_1 = require("../src/commands/run");
 commander_1.program
     .name('agent-cli')
-    .description('A simple CLI Agent powered by SiliconFlow / OpenAI API')
+    .description('An interactive terminal agent for local software work')
     .version('1.0.0');
 commander_1.program
     .command('run')
-    .description('Start the autonomous Agent loop')
+    .description('Start an Agent CLI workspace session')
     .action(() => {
     (0, run_1.runAgent)();
 });

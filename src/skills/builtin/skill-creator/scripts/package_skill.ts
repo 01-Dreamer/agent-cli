@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+#!/usr/bin/env ts-node
 
 /**
  * @license
@@ -7,33 +7,34 @@
  */
 
 /**
- * Skill Packager - Creates a distributable .skill file of a skill folder
+ * Skill Packager - Creates a distributable .skill file of a skill folder.
  *
  * Usage:
- *     node package_skill.js <path/to/skill-folder> [output-directory]
+ *     npx ts-node package_skill.ts <path/to/skill-folder> [output-directory]
  */
 
-const path = require('node:path');
-const { spawnSync } = require('node:child_process');
-const { validateSkill } = require('./validate_skill.cjs');
+import * as fs from 'fs';
+import * as path from 'path';
+import { spawnSync } from 'child_process';
+import { validateSkill } from './validate_skill';
 
-async function main() {
+async function main(): Promise<void> {
   const args = process.argv.slice(2);
   if (args.length < 1) {
     console.log(
-      'Usage: node package_skill.js <path/to/skill-folder> [output-directory]',
+      'Usage: npx ts-node package_skill.ts <path/to/skill-folder> [output-directory]',
     );
     process.exit(1);
   }
 
-  const skillPathArg = args[0];
+  const skillPathArg = args[0] ?? '';
   const outputDirArg = args[1];
 
   if (
     skillPathArg.includes('..') ||
     (outputDirArg && outputDirArg.includes('..'))
   ) {
-    console.error('❌ Error: Path traversal detected in arguments.');
+    console.error('Error: Path traversal detected in arguments.');
     process.exit(1);
   }
 
@@ -41,33 +42,23 @@ async function main() {
   const outputDir = outputDirArg ? path.resolve(outputDirArg) : process.cwd();
   const skillName = path.basename(skillPath);
 
-  // 1. Validate first
-  console.log('🔍 Validating skill...');
+  console.log('Validating skill...');
   const result = validateSkill(skillPath);
   if (!result.valid) {
-    console.error(`❌ Validation failed: ${result.message}`);
+    console.error(`Validation failed: ${result.message}`);
     process.exit(1);
   }
 
   if (result.warning) {
-    console.warn(`⚠️  ${result.warning}`);
-    console.log('Please resolve all TODOs before packaging.');
+    console.warn(`Warning: ${result.warning}`);
+    console.log('Resolve all TODOs before packaging.');
     process.exit(1);
   }
-  console.log('✅ Skill is valid!');
+  console.log('Skill is valid.');
 
-  // 2. Package
   const outputFilename = path.join(outputDir, `${skillName}.skill`);
 
   try {
-    // Zip everything except junk, keeping the folder structure
-    // We'll use the native 'zip' command for simplicity in a CLI environment
-    // or we could use a JS library, but zip is ubiquitous on darwin/linux.
-
-    // Command to zip:
-    // -r: recursive
-    // -x: exclude patterns
-    // Run the zip command from within the directory to avoid parent folder nesting
     let zipProcess = spawnSync('zip', ['-r', outputFilename, '.'], {
       cwd: skillPath,
       stdio: 'inherit',
@@ -75,11 +66,8 @@ async function main() {
 
     if (zipProcess.error || zipProcess.status !== 0) {
       if (process.platform === 'win32') {
-        // Fallback to PowerShell Compress-Archive on Windows
-        // Note: Compress-Archive only supports .zip extension, so we zip to .zip and rename
         console.log('zip command not found, falling back to PowerShell...');
         const tempZip = outputFilename + '.zip';
-        // Escape single quotes for PowerShell (replace ' with '') and use single quotes for the path
         const safeTempZip = tempZip.replace(/'/g, "''");
         zipProcess = spawnSync(
           'powershell.exe',
@@ -94,11 +82,10 @@ async function main() {
           },
         );
 
-        if (zipProcess.status === 0 && require('node:fs').existsSync(tempZip)) {
-          require('node:fs').renameSync(tempZip, outputFilename);
+        if (zipProcess.status === 0 && fs.existsSync(tempZip)) {
+          fs.renameSync(tempZip, outputFilename);
         }
       } else {
-        // Fallback to tar on Unix-like systems
         console.log('zip command not found, falling back to tar...');
         zipProcess = spawnSync(
           'tar',
@@ -121,11 +108,12 @@ async function main() {
       );
     }
 
-    console.log(`✅ Successfully packaged skill to: ${outputFilename}`);
-  } catch (err) {
-    console.error(`❌ Error packaging: ${err.message}`);
+    console.log(`Successfully packaged skill to: ${outputFilename}`);
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`Error packaging: ${message}`);
     process.exit(1);
   }
 }
 
-main();
+void main();

@@ -2,9 +2,9 @@
   "name": "agent-cli",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "./dist/bin/agent-cli.js",
   "scripts": {
-    "build": "tsc && node scripts/copy-assets.cjs",
+    "build": "tsc && node dist/scripts/copy-assets.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -20,9 +20,13 @@
   },
   "homepage": "https://github.com/01-Dreamer/agent-cli#readme",
   "dependencies": {
+    "@types/react": "^17.0.91",
     "commander": "^14.0.3",
     "dotenv": "^17.4.2",
-    "openai": "^6.36.0"
+    "ink": "^3.2.0",
+    "openai": "^6.36.0",
+    "react": "^17.0.2",
+    "string-width": "^4.2.3"
   },
   "bin": {
     "agent-cli": "./dist/bin/agent-cli.js"

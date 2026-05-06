@@ -1,7 +1,7 @@
-const fs = require('fs/promises');
-const path = require('path');
+import * as fs from 'fs/promises';
+import * as path from 'path';
 
-async function copyDir(sourceDir, targetDir) {
+async function copyDir(sourceDir: string, targetDir: string): Promise<void> {
   const entries = await fs.readdir(sourceDir, { withFileTypes: true });
 
   await fs.mkdir(targetDir, { recursive: true });
@@ -18,7 +18,7 @@ async function copyDir(sourceDir, targetDir) {
   }
 }
 
-async function main() {
+async function main(): Promise<void> {
   const builtinSkillsSource = path.join(process.cwd(), 'src', 'skills', 'builtin');
   const builtinSkillsTarget = path.join(process.cwd(), 'dist', 'src', 'skills', 'builtin');
 
@@ -29,7 +29,7 @@ async function main() {
   await fs.chmod(cliEntry, 0o755);
 }
 
-main().catch((error) => {
+main().catch((error: unknown) => {
   console.error(error);
   process.exit(1);
 });

@@ -4,12 +4,12 @@ import { runAgent } from '../src/commands/run';
 
 program
   .name('agent-cli')
-  .description('A simple CLI Agent powered by SiliconFlow / OpenAI API')
+  .description('An interactive terminal agent for local software work')
   .version('1.0.0');
 
 program
   .command('run')
-  .description('Start the autonomous Agent loop')
+  .description('Start an Agent CLI workspace session')
   .action(() => {
     runAgent();
   });

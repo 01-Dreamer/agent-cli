@@ -33,12 +33,31 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_MODEL = exports.openai = void 0;
-const dotenv = __importStar(require("dotenv"));
-const openai_1 = require("openai");
-dotenv.config({ quiet: true });
-exports.openai = new openai_1.OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-    baseURL: process.env.OPENAI_BASE_URL,
+const fs = __importStar(require("fs/promises"));
+const path = __importStar(require("path"));
+async function copyDir(sourceDir, targetDir) {
+    const entries = await fs.readdir(sourceDir, { withFileTypes: true });
+    await fs.mkdir(targetDir, { recursive: true });
+    for (const entry of entries) {
+        const sourcePath = path.join(sourceDir, entry.name);
+        const targetPath = path.join(targetDir, entry.name);
+        if (entry.isDirectory()) {
+            await copyDir(sourcePath, targetPath);
+        }
+        else if (entry.isFile()) {
+            await fs.copyFile(sourcePath, targetPath);
+        }
+    }
+}
+async function main() {
+    const builtinSkillsSource = path.join(process.cwd(), 'src', 'skills', 'builtin');
+    const builtinSkillsTarget = path.join(process.cwd(), 'dist', 'src', 'skills', 'builtin');
+    await fs.rm(builtinSkillsTarget, { recursive: true, force: true });
+    await copyDir(builtinSkillsSource, builtinSkillsTarget);
+    const cliEntry = path.join(process.cwd(), 'dist', 'bin', 'agent-cli.js');
+    await fs.chmod(cliEntry, 0o755);
+}
+main().catch((error) => {
+    console.error(error);
+    process.exit(1);
 });
-exports.DEFAULT_MODEL = process.env.MODEL_NAME || "deepseek-ai/DeepSeek-V3.2";

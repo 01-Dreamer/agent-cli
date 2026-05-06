@@ -1,3 +1,5 @@
+#!/usr/bin/env ts-node
+
 /**
  * @license
  * Copyright 2026 Google LLC
@@ -9,10 +11,16 @@
  * Leveraging existing dependencies when possible or providing a zero-dep fallback.
  */
 
-const fs = require('node:fs');
-const path = require('node:path');
+import * as fs from 'fs';
+import * as path from 'path';
 
-function validateSkill(skillPath) {
+export interface SkillValidationResult {
+  valid: boolean;
+  message: string;
+  warning?: string;
+}
+
+export function validateSkill(skillPath: string): SkillValidationResult {
   if (!fs.existsSync(skillPath) || !fs.statSync(skillPath).isDirectory()) {
     return { valid: false, message: `Path is not a directory: ${skillPath}` };
   }
@@ -32,21 +40,22 @@ function validateSkill(skillPath) {
     return { valid: false, message: 'Invalid frontmatter format' };
   }
 
-  const frontmatterText = parts[1];
+  const frontmatterText = parts[1] ?? '';
 
   const nameMatch = frontmatterText.match(/^name:\s*(.+)$/m);
-  // Match description: "text" or description: 'text' or description: text
   const descMatch = frontmatterText.match(
     /^description:\s*(?:'([^']*)'|"([^"]*)"|(.+))$/m,
   );
 
-  if (!nameMatch)
+  if (!nameMatch) {
     return { valid: false, message: 'Missing "name" in frontmatter' };
-  if (!descMatch)
+  }
+  if (!descMatch) {
     return {
       valid: false,
       message: 'Description must be a single-line string: description: ...',
     };
+  }
 
   const name = nameMatch[1].trim();
   const description = (
@@ -72,7 +81,6 @@ function validateSkill(skillPath) {
     return { valid: false, message: 'Description is too long (max 1024)' };
   }
 
-  // Check for TODOs
   const files = getAllFiles(skillPath);
   for (const file of files) {
     const fileContent = fs.readFileSync(file, 'utf8');
@@ -88,7 +96,7 @@ function validateSkill(skillPath) {
   return { valid: true, message: 'Skill is valid!' };
 }
 
-function getAllFiles(dir, fileList = []) {
+function getAllFiles(dir: string, fileList: string[] = []): string[] {
   const files = fs.readdirSync(dir);
   files.forEach((file) => {
     const name = path.join(dir, file);
@@ -106,26 +114,24 @@ function getAllFiles(dir, fileList = []) {
 if (require.main === module) {
   const args = process.argv.slice(2);
   if (args.length !== 1) {
-    console.log('Usage: node validate_skill.js <skill_directory>');
+    console.log('Usage: npx ts-node validate_skill.ts <skill_directory>');
     process.exit(1);
   }
 
-  const skillDirArg = args[0];
+  const skillDirArg = args[0] ?? '';
   if (skillDirArg.includes('..')) {
-    console.error('❌ Error: Path traversal detected in skill directory path.');
+    console.error('Error: Path traversal detected in skill directory path.');
     process.exit(1);
   }
 
   const result = validateSkill(path.resolve(skillDirArg));
   if (result.warning) {
-    console.warn(`⚠️  ${result.warning}`);
+    console.warn(`Warning: ${result.warning}`);
   }
   if (result.valid) {
-    console.log(`✅ ${result.message}`);
+    console.log(`Success: ${result.message}`);
   } else {
-    console.error(`❌ ${result.message}`);
+    console.error(`Failure: ${result.message}`);
     process.exit(1);
   }
 }
-
-module.exports = { validateSkill };

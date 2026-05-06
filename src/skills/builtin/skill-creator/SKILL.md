@@ -1,6 +1,6 @@
 ---
 name: skill-creator
-description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends Gemini CLI's capabilities with specialized knowledge, workflows, or tool integrations.
+description: Guide for creating effective skills. This skill should be used when users want to create a new skill (or update an existing skill) that extends agent-cli's capabilities with specialized knowledge, workflows, or tool integrations.
 ---
 
 # Skill Creator
@@ -9,7 +9,7 @@ This skill provides guidance for creating effective skills.
 
 ## About Skills
 
-Skills are modular, self-contained packages that extend Gemini CLI's capabilities by providing specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific domains or tasks—they transform Gemini CLI from a general-purpose agent into a specialized agent equipped with procedural knowledge that no model can fully possess.
+Skills are modular, self-contained packages that extend agent-cli's capabilities by providing specialized knowledge, workflows, and tools. Think of them as "onboarding guides" for specific domains or tasks—they transform agent-cli from a general-purpose agent into a specialized agent equipped with procedural knowledge that no model can fully possess.
 
 ### What Skills Provide
 
@@ -22,9 +22,9 @@ Skills are modular, self-contained packages that extend Gemini CLI's capabilitie
 
 ### Concise is Key
 
-The context window is a public good. Skills share the context window with everything else Gemini CLI needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
+The context window is a public good. Skills share the context window with everything else agent-cli needs: system prompt, conversation history, other Skills' metadata, and the actual user request.
 
-**Default assumption: Gemini CLI is already very smart.** Only add context Gemini CLI doesn't already have. Challenge each piece of information: "Does Gemini CLI really need this explanation?" and "Does this paragraph justify its token cost?"
+**Default assumption: agent-cli is already very smart.** Only add context agent-cli doesn't already have. Challenge each piece of information: "Does agent-cli really need this explanation?" and "Does this paragraph justify its token cost?"
 
 Prefer concise examples over verbose explanations.
 
@@ -38,7 +38,7 @@ Match the level of specificity to the task's fragility and variability:
 
 **Low freedom (specific scripts, few parameters)**: Use when operations are fragile and error-prone, consistency is critical, or a specific sequence must be followed.
 
-Think of Gemini CLI as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
+Think of agent-cli as exploring a path: a narrow bridge with cliffs needs specific guardrails (low freedom), while an open field allows many routes (high freedom).
 
 ### Anatomy of a Skill
 
@@ -61,7 +61,7 @@ skill-name/
 
 Every SKILL.md consists of:
 
-- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that Gemini CLI reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
+- **Frontmatter** (YAML): Contains `name` and `description` fields. These are the only fields that agent-cli reads to determine when the skill gets used, thus it is very important to be clear and comprehensive in describing what the skill is, and when it should be used.
 - **Body** (Markdown): Instructions and guidance for using the skill. Only loaded AFTER the skill triggers (if at all).
 
 #### Bundled Resources (optional)
@@ -71,31 +71,31 @@ Every SKILL.md consists of:
 Executable code (Node.js/Python/Bash/etc.) for tasks that require deterministic reliability or are repeatedly rewritten.
 
 - **When to include**: When the same code is being rewritten repeatedly or deterministic reliability is needed
-- **Example**: `scripts/rotate_pdf.cjs` for PDF rotation tasks
+- **Example**: `scripts/rotate_pdf.ts` for PDF rotation tasks
 - **Benefits**: Token efficient, deterministic, may be executed without loading into context
 - **Agentic Ergonomics**: Scripts must output LLM-friendly stdout. Suppress standard tracebacks. Output clear, concise success/failure messages, and paginate or truncate outputs (e.g., "Success: First 50 lines of processed file...") to prevent context window overflow.
-- **Note**: Scripts may still need to be read by Gemini CLI for patching or environment-specific adjustments
+- **Note**: Scripts may still need to be read by agent-cli for patching or environment-specific adjustments
 
 ##### References (`references/`)
 
-Documentation and reference material intended to be loaded as needed into context to inform Gemini CLI's process and thinking.
+Documentation and reference material intended to be loaded as needed into context to inform agent-cli's process and thinking.
 
-- **When to include**: For documentation that Gemini CLI should reference while working
+- **When to include**: For documentation that agent-cli should reference while working
 - **Examples**: `references/finance.md` for financial schemas, `references/mnda.md` for company NDA template, `references/policies.md` for company policies, `references/api_docs.md` for API specifications
 - **Use cases**: Database schemas, API documentation, domain knowledge, company policies, detailed workflow guides
-- **Benefits**: Keeps SKILL.md lean, loaded only when Gemini CLI determines it's needed
+- **Benefits**: Keeps SKILL.md lean, loaded only when agent-cli determines it's needed
 - **Best practice**: If files are large (>10k words), include grep search patterns in SKILL.md
 - **Avoid duplication**: Information should live in either SKILL.md or
   references files, not both. Prefer references files for detailed information unless it's truly core to the skill—this keeps SKILL.md lean while making information discoverable without hogging the context window. Keep only essential procedural instructions and workflow guidance in SKILL.md; move detailed reference material, schemas, and examples to references files.
 
 ##### Assets (`assets/`)
 
-Files not intended to be loaded into context, but rather used within the output Gemini CLI produces.
+Files not intended to be loaded into context, but rather used within the output agent-cli produces.
 
 - **When to include**: When the skill needs files that will be used in the final output
 - **Examples**: `assets/logo.png` for brand assets, `assets/slides.pptx` for PowerPoint templates, `assets/frontend-template/` for HTML/React boilerplate, `assets/font.ttf` for typography
 - **Use cases**: Templates, images, icons, boilerplate code, fonts, sample documents that get copied or modified
-- **Benefits**: Separates output resources from documentation, enables Gemini CLI to use files without loading them into context
+- **Benefits**: Separates output resources from documentation, enables agent-cli to use files without loading them into context
 
 #### What to Not Include in a Skill
 
@@ -115,7 +115,7 @@ Skills use a three-level loading system to manage context efficiently:
 
 1. **Metadata (name + description)** - Always in context (~100 words)
 2. **SKILL.md body** - When skill triggers (<5k words)
-3. **Bundled resources** - As needed by Gemini CLI (Unlimited because scripts can be executed without reading into context window)
+3. **Bundled resources** - As needed by agent-cli (Unlimited because scripts can be executed without reading into context window)
 
 #### Progressive Disclosure Patterns
 
@@ -139,7 +139,7 @@ Extract text with pdfplumber: [code example]
 - **Examples**: See [EXAMPLES.md](EXAMPLES.md) for common patterns
 ```
 
-Gemini CLI loads FORMS.md, REFERENCE.md, or EXAMPLES.md only when needed.
+agent-cli loads FORMS.md, REFERENCE.md, or EXAMPLES.md only when needed.
 
 **Pattern 2: Domain-specific organization**
 
@@ -155,7 +155,7 @@ bigquery-skill/
     └── marketing.md (campaigns, attribution)
 ```
 
-When a user asks about sales metrics, Gemini CLI only reads sales.md.
+When a user asks about sales metrics, agent-cli only reads sales.md.
 
 Similarly, for skills supporting multiple frameworks or variants, organize by variant:
 
@@ -168,7 +168,7 @@ cloud-deploy/
     └── azure.md (Azure deployment patterns)
 ```
 
-When the user chooses AWS, Gemini CLI only reads aws.md.
+When the user chooses AWS, agent-cli only reads aws.md.
 
 **Pattern 3: Conditional details**
 
@@ -185,13 +185,13 @@ Use pandas for loading and basic queries. See [PANDAS.md](PANDAS.md).
 
 For massive files that exceed memory, see [STREAMING.md](STREAMING.md). For timestamp normalization, see [TIMESTAMPS.md](TIMESTAMPS.md).
 
-Gemini CLI reads REDLINING.md or OOXML.md only when the user needs those features.
+agent-cli reads REDLINING.md or OOXML.md only when the user needs those features.
 ```
 
 **Important guidelines:**
 
 - **Avoid deeply nested references** - Keep references one level deep from SKILL.md. All reference files should link directly from SKILL.md.
-- **Structure longer reference files** - For files longer than 100 lines, include a table of contents at the top so Gemini CLI can see the full scope when previewing.
+- **Structure longer reference files** - For files longer than 100 lines, include a table of contents at the top so agent-cli can see the full scope when previewing.
 
 ## Skill Creation Process
 
@@ -199,9 +199,9 @@ Skill creation involves these steps:
 
 1. Understand the skill with concrete examples
 2. Plan reusable skill contents (scripts, references, assets)
-3. Initialize the skill (run node init_skill.cjs)
+3. Initialize the skill (run node init_skill.ts)
 4. Edit the skill (implement resources and write SKILL.md)
-5. Package the skill (run node package_skill.cjs)
+5. Package the skill (run node package_skill.ts)
 6. Install and reload the skill
 7. Iterate based on real usage
 
@@ -242,7 +242,7 @@ To turn concrete examples into an effective skill, analyze each example by:
 Example: When building a `pdf-editor` skill to handle queries like "Help me rotate this PDF," the analysis shows:
 
 1. Rotating a PDF requires re-writing the same code each time
-2. A `scripts/rotate_pdf.cjs` script would be helpful to store in the skill
+2. A `scripts/rotate_pdf.ts` script would be helpful to store in the skill
 
 Example: When designing a `frontend-webapp-builder` skill for queries like "Build me a todo app" or "Build me a dashboard to track my steps," the analysis shows:
 
@@ -262,14 +262,14 @@ At this point, it is time to actually create the skill.
 
 Skip this step only if the skill being developed already exists, and iteration or packaging is needed. In this case, continue to the next step.
 
-When creating a new skill from scratch, always run the `init_skill.cjs` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
+When creating a new skill from scratch, always run the `init_skill.ts` script. The script conveniently generates a new template skill directory that automatically includes everything a skill requires, making the skill creation process much more efficient and reliable.
 
 **Note:** Use the absolute path to the script as provided in the `available_resources` section.
 
 Usage:
 
 ```bash
-node <path-to-skill-creator>/scripts/init_skill.cjs <skill-name> --path <output-directory>
+npx ts-node <path-to-skill-creator>/scripts/init_skill.ts <skill-name> --path <output-directory>
 ```
 
 The script:
@@ -277,13 +277,13 @@ The script:
 - Creates the skill directory at the specified path
 - Generates a SKILL.md template with proper frontmatter and TODO placeholders
 - Creates example resource directories: `scripts/`, `references/`, and `assets/`
-- Adds example files (`scripts/example_script.cjs`, `references/example_reference.md`, `assets/example_asset.txt`) that can be customized or deleted
+- Adds example files (`scripts/example_script.ts`, `references/example_reference.md`, `assets/example_asset.txt`) that can be customized or deleted
 
 After initialization, customize or remove the generated SKILL.md and example files as needed.
 
 ### Step 4: Edit the Skill
 
-When editing the (newly-generated or existing) skill, remember that the skill is being created for another instance of Gemini CLI to use. Include information that would be beneficial and non-obvious to Gemini CLI. Consider what procedural knowledge, domain-specific details, or reusable assets would help another Gemini CLI instance execute these tasks more effectively.
+When editing the (newly-generated or existing) skill, remember that the skill is being created for another instance of agent-cli to use. Include information that would be beneficial and non-obvious to agent-cli. Consider what procedural knowledge, domain-specific details, or reusable assets would help another agent-cli instance execute these tasks more effectively.
 
 #### Learn Proven Design Patterns
 
@@ -311,11 +311,11 @@ Any example files and directories not needed for the skill should be deleted. Th
 Write the YAML frontmatter with `name` and `description`:
 
 - `name`: The skill name
-- `description`: This is the primary triggering mechanism for your skill, and helps Gemini CLI understand when to use the skill.
+- `description`: This is the primary triggering mechanism for your skill, and helps agent-cli understand when to use the skill.
   - Include both what the Skill does and specific triggers/contexts for when to use it.
   - **Must be a single-line string** (e.g., `description: Data ingestion...`). Quotes are optional.
-  - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to Gemini CLI.
-  - Example: `description: Data ingestion, cleaning, and transformation for tabular data. Use when Gemini CLI needs to work with CSV/TSV files to analyze large datasets, normalize schemas, or merge sources.`
+  - Include all "when to use" information here - Not in the body. The body is only loaded after triggering, so "When to Use This Skill" sections in the body are not helpful to agent-cli.
+  - Example: `description: Data ingestion, cleaning, and transformation for tabular data. Use when agent-cli needs to work with CSV/TSV files to analyze large datasets, normalize schemas, or merge sources.`
 
 Do not include any other fields in YAML frontmatter.
 
@@ -330,13 +330,13 @@ Once development of the skill is complete, it must be packaged into a distributa
 **Note:** Use the absolute path to the script as provided in the `available_resources` section.
 
 ```bash
-node <path-to-skill-creator>/scripts/package_skill.cjs <path/to/skill-folder>
+npx ts-node <path-to-skill-creator>/scripts/package_skill.ts <path/to/skill-folder>
 ```
 
 Optional output directory specification:
 
 ```bash
-node <path-to-skill-creator>/scripts/package_skill.cjs <path/to/skill-folder> ./dist
+npx ts-node <path-to-skill-creator>/scripts/package_skill.ts <path/to/skill-folder> ./dist
 ```
 
 The packaging script will:
@@ -353,22 +353,23 @@ If validation fails, the script will report the errors and exit without creating
 
 ### Step 6: Installing and Reloading a Skill
 
-Once the skill is packaged into a `.skill` file, offer to install it for the user. Ask whether they would like to install it locally in the current folder (workspace scope) or at the user level (user scope).
+Once the skill is packaged into a `.skill` file, offer to install it for the
+user. Ask whether they would like to install it locally in the current folder
+(workspace scope) or at the user level (user scope).
 
-If the user agrees to an installation, perform it immediately using the `run_shell_command` tool:
+If the user agrees to an installation, perform it immediately using the `shell`
+tool:
 
-- **Locally (workspace scope)**:
-  ```bash
-  gemini skills install <path/to/skill-name.skill> --scope workspace
-  ```
-- **User level (user scope)**:
-  ```bash
-  gemini skills install <path/to/skill-name.skill> --scope user
-  ```
+- **Locally (workspace scope)**: extract or copy the skill folder to
+  `.agents/skills/<skill-name>/`.
+- **User level (user scope)**: extract or copy the skill folder to
+  `~/.agents/skills/<skill-name>/`.
 
-**Important:** After the installation is complete, notify the user that they MUST manually execute the `/skills reload` command in their interactive Gemini CLI session to enable the new skill. They can then verify the installation by running `/skills list`.
+**Important:** After the installation is complete, notify the user that they
+must restart their interactive agent-cli session to enable the new skill.
 
-Note: You (the agent) cannot execute the `/skills reload` command yourself; it must be done by the user in an interactive instance of Gemini CLI. Do not attempt to run it on their behalf.
+Note: You (the agent) cannot restart the user's interactive agent-cli session
+yourself. Do not attempt to run it on their behalf.
 
 ### Step 7: Iterate
 

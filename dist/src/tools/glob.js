@@ -40,7 +40,7 @@ const types_1 = require("../types");
 const utils_1 = require("./utils");
 class GlobTool extends types_1.Tool {
     name = "glob";
-    description = "Glob: Finds files in the workspace by glob pattern, similar to Gemini CLI's glob tool.";
+    description = "Glob: Finds files in the workspace by glob pattern.";
     parameters = {
         type: "object",
         properties: {

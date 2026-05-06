@@ -1,11 +1,9 @@
 import { Tool } from '../types';
-export interface ShellArgs {
-    command: string;
-}
-export declare class ShellTool extends Tool<ShellArgs> {
-    readonly name = "shell";
-    readonly description = "Shell: Executes a shell command in the workspace directory. Ideal for running scripts, git commands, npm install, or curl.";
-    readonly parameters: {
+import OpenAI from 'openai';
+export declare class ShellTool implements Tool<any> {
+    name: string;
+    description: string;
+    parameters: {
         type: string;
         properties: {
             command: {
@@ -15,6 +13,7 @@ export declare class ShellTool extends Tool<ShellArgs> {
         };
         required: string[];
     };
-    private readonly workspaceDir;
-    execute(args: ShellArgs): Promise<string>;
+    get definition(): OpenAI.Chat.ChatCompletionTool;
+    private get workspaceDir();
+    execute(args: any): Promise<string>;
 }

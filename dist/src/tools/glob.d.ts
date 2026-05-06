@@ -18,10 +18,6 @@ export declare class GlobTool extends Tool<GlobArgs> {
                 type: string;
                 description: string;
             };
-            limit: {
-                type: string;
-                description: string;
-            };
         };
         required: string[];
     };

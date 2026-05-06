@@ -15,11 +15,11 @@ export declare class ReplaceInFileTool extends Tool<ReplaceInFileArgs> {
                 type: string;
                 description: string;
             };
-            oldString: {
+            searchString: {
                 type: string;
                 description: string;
             };
-            newString: {
+            replaceString: {
                 type: string;
                 description: string;
             };

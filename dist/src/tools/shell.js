@@ -34,44 +34,59 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.ShellTool = void 0;
-const child_process_1 = require("child_process");
-const path = __importStar(require("path"));
+const child_process = __importStar(require("child_process"));
 const util = __importStar(require("util"));
-const types_1 = require("../types");
-const execAsync = util.promisify(child_process_1.exec);
-class ShellTool extends types_1.Tool {
-    name = "shell";
-    description = "Shell: Executes a shell command in the workspace directory. Ideal for running scripts, git commands, npm install, or curl.";
+const execAsync = util.promisify(child_process.exec);
+class ShellTool {
+    name = 'shell';
+    description = 'Execute a shell command. Use carefully.';
     parameters = {
-        type: "object",
+        type: 'object',
         properties: {
             command: {
-                type: "string",
-                description: "The shell command to execute.",
+                type: 'string',
+                description: 'The shell command to execute.',
             },
         },
-        required: ["command"],
+        required: ['command'],
     };
-    workspaceDir = path.resolve(process.cwd(), 'workspace_test');
+    get definition() {
+        return {
+            type: 'function',
+            function: {
+                name: this.name,
+                description: this.description,
+                parameters: this.parameters,
+            },
+        };
+    }
+    get workspaceDir() {
+        return process.cwd();
+    }
     async execute(args) {
         try {
-            // 在 workspace_test 环境内执行命令
+            // 在当前工作目录下执行命令
             const { stdout, stderr } = await execAsync(args.command, {
                 cwd: this.workspaceDir,
-                timeout: 30000 // 30秒超时防止卡死
+                shell: '/bin/bash',
+                timeout: 30000, // 30秒超时防止卡死
             });
-            let result = "";
+            let result = '';
             if (stdout)
                 result += `STDOUT:\n${stdout}\n`;
             if (stderr)
                 result += `STDERR:\n${stderr}\n`;
-            return result || JSON.stringify({ success: true, message: "Command executed successfully with no output." });
+            return (result ||
+                JSON.stringify({
+                    success: true,
+                    message: 'Command executed successfully with no output.',
+                }));
         }
         catch (error) {
             return JSON.stringify({
                 error: `Command failed: ${error.message}`,
                 stdout: error.stdout,
-                stderr: error.stderr
+                stderr: error.stderr,
             });
         }
     }

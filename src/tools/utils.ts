@@ -2,23 +2,23 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 
 export function getWorkspaceDir(): string {
-    return path.resolve(process.cwd(), 'workspace_test');
+    return process.cwd();
 }
 
-export function resolveWorkspacePath(inputPath = '.'): { absolutePath: string; workspaceDir: string; error?: string } {
+export function resolveWorkspacePath(targetPath: string): { valid: boolean; absolutePath: string; workspaceDir: string; error?: string } {
     const workspaceDir = getWorkspaceDir();
-    const absolutePath = path.resolve(workspaceDir, inputPath);
-    const relative = path.relative(workspaceDir, absolutePath);
+    const absolutePath = path.resolve(workspaceDir, targetPath);
 
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    if (!absolutePath.startsWith(workspaceDir)) {
         return {
+            valid: false,
             absolutePath,
             workspaceDir,
-            error: `Permission denied: Cannot access outside of workspace_test directory.`,
+            error: `Permission denied: Cannot access outside of the current working directory.`,
         };
     }
 
-    return { absolutePath, workspaceDir };
+    return { valid: true, absolutePath, workspaceDir };
 }
 
 export function toPosixPath(filePath: string): string {
@@ -69,7 +69,10 @@ export function matchesAnyGlob(relativePath: string, patterns: string[] = []): b
     return patterns.some((pattern) => globToRegExp(pattern).test(normalizedPath));
 }
 
-export async function walkFiles(rootDir: string, options?: { ignoreDirs?: string[] }): Promise<string[]> {
+export async function walkFiles(
+    dir: string,
+    options?: { ignoreDirs?: string[] }
+): Promise<string[]> {
     const ignoreDirs = new Set(options?.ignoreDirs ?? ['.git', 'node_modules']);
     const files: string[] = [];
 
@@ -88,6 +91,6 @@ export async function walkFiles(rootDir: string, options?: { ignoreDirs?: string
         }
     }
 
-    await walk(rootDir);
+    await walk(dir);
     return files;
 }

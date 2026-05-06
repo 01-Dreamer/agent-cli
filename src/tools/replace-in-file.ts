@@ -16,12 +16,15 @@ export class ReplaceInFileTool extends Tool<ReplaceInFileArgs> {
     readonly parameters = {
         type: "object",
         properties: {
-            filePath: { type: "string", description: "File to edit, relative to workspace_test." },
-            oldString: { type: "string", description: "Exact string to replace." },
-            newString: { type: "string", description: "Replacement string." },
+            filePath: {
+                type: "string",
+                description: "File to edit, relative to current working directory.",
+            },
+            searchString: { type: "string", description: "Exact string to replace." },
+            replaceString: { type: "string", description: "Replacement string." },
             allowMultiple: { type: "boolean", description: "Allow replacing multiple occurrences. Defaults to false." },
         },
-        required: ["filePath", "oldString", "newString"],
+        required: ["filePath", "searchString", "replaceString"],
     };
 
     async execute(args: ReplaceInFileArgs): Promise<string> {

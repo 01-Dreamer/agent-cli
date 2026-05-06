@@ -1,12 +1,9 @@
 import { Tool } from '../types';
-export interface WriteFileArgs {
-    filePath: string;
-    content: string;
-}
-export declare class WriteFileTool extends Tool<WriteFileArgs> {
-    readonly name = "write_file";
-    readonly description = "WriteFile: Writes content to a file in the workspace. Overwrites if it exists, creates if it does not.";
-    readonly parameters: {
+import OpenAI from 'openai';
+export declare class WriteFileTool implements Tool<any> {
+    name: string;
+    description: string;
+    parameters: {
         type: string;
         properties: {
             filePath: {
@@ -20,9 +17,7 @@ export declare class WriteFileTool extends Tool<WriteFileArgs> {
         };
         required: string[];
     };
-    /**
-     * 临时硬编码的安全沙箱目录，防止模型随意写入系统文件。
-     */
-    private readonly workspaceDir;
-    execute(args: WriteFileArgs): Promise<string>;
+    get definition(): OpenAI.Chat.ChatCompletionTool;
+    private get workspaceDir();
+    execute(args: any): Promise<string>;
 }

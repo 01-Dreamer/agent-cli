@@ -44,8 +44,11 @@ class GrepTool extends types_1.Tool {
     parameters = {
         type: "object",
         properties: {
-            pattern: { type: "string", description: "Regular expression to search for." },
-            dirPath: { type: "string", description: "Directory to search in, relative to workspace_test. Defaults to workspace root." },
+            pattern: { type: "string", description: "The string or regex pattern to search for." },
+            dirPath: {
+                type: "string",
+                description: "Directory to search in, relative to current working directory. Defaults to workspace root.",
+            },
             includePattern: { type: "string", description: "Optional glob for files to include, e.g. \"**/*.ts\"." },
             excludePattern: { type: "string", description: "Optional glob for files to exclude, e.g. \"dist/**\"." },
             caseSensitive: { type: "boolean", description: "Whether search is case-sensitive. Defaults to false." },

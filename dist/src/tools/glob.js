@@ -46,15 +46,11 @@ class GlobTool extends types_1.Tool {
         properties: {
             pattern: {
                 type: "string",
-                description: "Glob pattern to match, e.g. \"**/*.ts\" or \"src/**/*.md\".",
+                description: "Glob pattern to search for, e.g., src/**/*.ts",
             },
             dirPath: {
                 type: "string",
-                description: "Optional directory to search in, relative to workspace_test. Defaults to workspace root.",
-            },
-            limit: {
-                type: "number",
-                description: "Maximum number of matched files to return. Defaults to 200.",
+                description: "Optional directory to search in, relative to current working directory. Defaults to workspace root.",
             },
         },
         required: ["pattern"],

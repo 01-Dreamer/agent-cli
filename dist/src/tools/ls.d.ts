@@ -1,22 +1,19 @@
 import { Tool } from '../types';
-export interface ListDirectoryArgs {
-    dirPath?: string;
-}
-export declare class ListDirectoryTool extends Tool<ListDirectoryArgs> {
-    readonly name = "list_directory";
-    readonly description = "ListDirectory: Lists the files and folders in a workspace directory.";
-    readonly parameters: {
+import OpenAI from 'openai';
+export declare class ListDirectoryTool implements Tool<any> {
+    name: string;
+    description: string;
+    parameters: {
         type: string;
         properties: {
-            dirPath: {
+            path: {
                 type: string;
                 description: string;
             };
         };
+        required: never[];
     };
-    /**
-     * 临时硬编码的安全沙箱目录
-     */
-    private readonly workspaceDir;
-    execute(args: ListDirectoryArgs): Promise<string>;
+    get definition(): OpenAI.Chat.ChatCompletionTool;
+    private get workspaceDir();
+    execute(args: any): Promise<string>;
 }

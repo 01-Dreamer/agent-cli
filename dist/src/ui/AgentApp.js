@@ -32,13 +32,24 @@ var __importStar = (this && this.__importStar) || (function () {
         return result;
     };
 })();
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.AgentApp = AgentApp;
 const react_1 = __importStar(require("react"));
 const ink_1 = require("ink");
 const openai_1 = require("../api/openai");
 const MarkdownDisplay_1 = require("./MarkdownDisplay");
-const MAX_STEPS = 10;
+const string_width_1 = __importDefault(require("string-width"));
+const child_process_1 = require("child_process");
+const util_1 = require("util");
+const path = __importStar(require("path"));
+const fs_1 = require("fs");
+const execAsync = (0, util_1.promisify)(child_process_1.exec);
+const MAX_STEPS = 30;
+// MAX_VISIBLE_LOGS 决定了屏幕上（Ink框架的UI上）最大能够同时渲染/记忆的历史日志条数。
+// 当日志超过这个数量时，最旧的日志会被移出屏幕（不在界面上显示），以防止终端占用过大内存卡顿。
 const MAX_VISIBLE_LOGS = 80;
 function truncate(value, maxLength) {
     return value.length > maxLength ? `${value.slice(0, maxLength)}...` : value;
@@ -56,7 +67,9 @@ function renderHelp() {
         '/skills list discovered Agent skills',
         '/tools  list tools exposed to the model',
         '/clear  clear the screen',
-        'exit    close the session',
+        '/cd     change current working directory (e.g., /cd ../some-folder)',
+        '/pwd    show current working directory',
+        '/exit   close the session',
     ].join('\n');
 }
 function renderSkills(skills) {
@@ -89,23 +102,36 @@ function tryParseToolArguments(rawArguments) {
 function AgentApp({ model, systemPrompt, skills, toolNames, definitions, implementations, }) {
     const { exit } = (0, ink_1.useApp)();
     const { isRawModeSupported } = (0, ink_1.useStdin)();
+    const [terminalWidth, setTerminalWidth] = (0, react_1.useState)(process.stdout.columns || 80);
     const [input, setInput] = (0, react_1.useState)('');
     const [logs, setLogs] = (0, react_1.useState)([]);
     const [queue, setQueue] = (0, react_1.useState)([]);
+    const [currentTask, setCurrentTask] = (0, react_1.useState)(null);
+    const [usageTokens, setUsageTokens] = (0, react_1.useState)(null);
     const [busy, setBusy] = (0, react_1.useState)(false);
     const [activity, setActivity] = (0, react_1.useState)('ready');
     const [turnCount, setTurnCount] = (0, react_1.useState)(0);
+    const [currentCwd, setCurrentCwd] = (0, react_1.useState)(process.cwd());
+    const [inputMode, setInputMode] = (0, react_1.useState)('chat');
     const messagesRef = (0, react_1.useRef)([
         { role: 'system', content: systemPrompt },
     ]);
     const processingRef = (0, react_1.useRef)(false);
+    (0, react_1.useEffect)(() => {
+        const handleResize = () => setTerminalWidth(process.stdout.columns || 80);
+        process.stdout.on('resize', handleResize);
+        return () => {
+            process.stdout.off('resize', handleResize);
+        };
+    }, []);
     const coreToolCount = (0, react_1.useMemo)(() => toolNames.filter((name) => name !== 'activate_skill').length, [toolNames]);
     const addLog = (0, react_1.useCallback)((entry) => {
         setLogs((current) => [...current, entry].slice(-MAX_VISIBLE_LOGS));
     }, []);
     const handleCommand = (0, react_1.useCallback)((value) => {
-        const normalized = value.trim().toLowerCase();
-        if (normalized === 'exit' || normalized === 'quit') {
+        const trimmed = value.trim();
+        const normalized = trimmed.toLowerCase();
+        if (normalized === '/exit' || normalized === '/quit') {
             addLog({ type: 'system', text: 'Agent CLI session closed.', tone: 'success' });
             exit();
             return true;
@@ -126,8 +152,64 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
             setLogs([]);
             return true;
         }
+        if (normalized === '/pwd') {
+            addLog({ type: 'system', text: `Current directory: ${process.cwd()}`, tone: 'normal' });
+            return true;
+        }
+        if (normalized.startsWith('/cd')) {
+            const parts = trimmed.split(/\s+/);
+            if (parts.length < 2) {
+                addLog({ type: 'system', text: `Usage: /cd <path>\nCurrent directory: ${process.cwd()}`, tone: 'warning' });
+                return true;
+            }
+            const targetPath = parts.slice(1).join(' ');
+            try {
+                process.chdir(targetPath);
+                setCurrentCwd(process.cwd());
+                addLog({ type: 'system', text: `Changed directory to: ${process.cwd()}`, tone: 'success' });
+                // You may want to update the system prompt context internally in the future
+                // or just let tools resolve process.cwd() dynamically as we have refactored them to do.
+            }
+            catch (err) {
+                addLog({ type: 'system', text: `cd failed: ${err.message}`, tone: 'error' });
+            }
+            return true;
+        }
         return false;
     }, [addLog, exit, skills, toolNames]);
+    const handleLocalCommand = (0, react_1.useCallback)(async (cmd) => {
+        if (!cmd.trim())
+            return;
+        addLog({ type: 'system', text: `! ${cmd}`, tone: 'warning', hidePrefix: true });
+        setBusy(true);
+        if (cmd.trim().startsWith('cd ')) {
+            const targetPath = cmd.trim().substring(3).trim();
+            try {
+                process.chdir(path.resolve(currentCwd, targetPath));
+                setCurrentCwd(process.cwd());
+            }
+            catch (err) {
+                addLog({ type: 'system', text: `cd failed: ${err.message}`, tone: 'error', hidePrefix: true });
+            }
+            setBusy(false);
+            return;
+        }
+        try {
+            const { stdout, stderr } = await execAsync(cmd, { cwd: currentCwd, shell: '/bin/bash' });
+            if (stdout)
+                addLog({ type: 'system', text: stdout.trimEnd(), tone: 'normal', hidePrefix: true });
+            if (stderr)
+                addLog({ type: 'system', text: stderr.trimEnd(), tone: 'warning', hidePrefix: true });
+            if (!stdout && !stderr)
+                addLog({ type: 'system', text: 'Command executed successfully.', tone: 'success', hidePrefix: true });
+        }
+        catch (error) {
+            addLog({ type: 'system', text: `Error: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`.trimEnd(), tone: 'error', hidePrefix: true });
+        }
+        finally {
+            setBusy(false);
+        }
+    }, [addLog, currentCwd]);
     const submitInput = (0, react_1.useCallback)((value) => {
         const trimmed = value.trim();
         if (!trimmed)
@@ -144,7 +226,23 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
             exit();
             return;
         }
+        if (key.escape) {
+            if (inputMode === 'command') {
+                setInputMode('chat');
+                return;
+            }
+            return;
+        }
+        if (inputMode === 'chat' && input === '' && (value === '!' || value === '！')) {
+            setInputMode('command');
+            return;
+        }
         if (key.return || value === '\r' || value === '\n') {
+            if (inputMode === 'command') {
+                handleLocalCommand(input);
+                setInput('');
+                return;
+            }
             submitInput(input);
             setInput('');
             return;
@@ -153,9 +251,17 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
             const normalizedValue = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             const parts = normalizedValue.split('\n');
             const firstSubmission = `${input}${parts[0]}`;
-            submitInput(firstSubmission);
-            for (const queuedSubmission of parts.slice(1, -1)) {
-                submitInput(queuedSubmission);
+            if (inputMode === 'command') {
+                handleLocalCommand(firstSubmission);
+                for (const queuedSubmission of parts.slice(1, -1)) {
+                    handleLocalCommand(queuedSubmission);
+                }
+            }
+            else {
+                submitInput(firstSubmission);
+                for (const queuedSubmission of parts.slice(1, -1)) {
+                    submitInput(queuedSubmission);
+                }
             }
             setInput(parts.at(-1) ?? '');
             return;
@@ -164,7 +270,61 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
             setInput((current) => current.slice(0, -1));
             return;
         }
-        if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow || key.tab || key.escape) {
+        if (key.tab) {
+            // 如果处于输入路径状态下，尝试使用简单的 Tab 补全目录
+            if (input.startsWith('/cd ') || inputMode === 'command') {
+                const parts = input.split(' ');
+                const lastParam = parts[parts.length - 1];
+                try {
+                    let searchDir = currentCwd;
+                    let filePrefix = lastParam;
+                    if (lastParam.startsWith('/')) {
+                        searchDir = path.dirname(lastParam) || '/';
+                        filePrefix = path.basename(lastParam);
+                    }
+                    else if (lastParam.includes('/')) {
+                        searchDir = path.resolve(currentCwd, path.dirname(lastParam));
+                        filePrefix = path.basename(lastParam);
+                    }
+                    else if (lastParam === '.' || lastParam === '..') {
+                        return;
+                    }
+                    // Shell 模式下补全如果没有前缀就是空串寻找整个目录
+                    filePrefix = filePrefix || '';
+                    if (!(0, fs_1.existsSync)(searchDir))
+                        return;
+                    const files = require('fs').readdirSync(searchDir);
+                    const matches = files.filter((f) => f.startsWith(filePrefix));
+                    if (matches.length === 1) {
+                        const match = matches[0];
+                        const fullMatchPath = path.join(searchDir, match);
+                        const isDir = (0, fs_1.statSync)(fullMatchPath).isDirectory();
+                        const suffix = isDir ? '/' : '';
+                        const completedSuffix = match.slice(filePrefix.length) + suffix;
+                        setInput((current) => current + completedSuffix);
+                    }
+                    else if (matches.length > 1) {
+                        addLog({
+                            type: 'system',
+                            text: matches.map((m) => {
+                                try {
+                                    return (0, fs_1.statSync)(path.join(searchDir, m)).isDirectory() ? `${m}/` : m;
+                                }
+                                catch (e) {
+                                    return m;
+                                }
+                            }).join('  '),
+                            tone: 'normal',
+                            hidePrefix: true
+                        });
+                    }
+                }
+                catch (e) {
+                }
+            }
+            return;
+        }
+        if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow || key.escape) {
             return;
         }
         if (value) {
@@ -178,20 +338,27 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
         setTurnCount((count) => count + 1);
         addLog({ type: 'user', text: userInput });
         messagesRef.current.push({ role: 'user', content: userInput });
+        let stepCount = 0;
+        let isAgentFinished = false;
         try {
-            let isAgentFinished = false;
-            let stepCount = 0;
             while (!isAgentFinished && stepCount < MAX_STEPS) {
-                stepCount += 1;
-                setActivity(stepCount > 1 ? 'thinking with tool results' : 'thinking');
+                stepCount++;
+                setActivity('thinking');
                 const chatCompletion = await openai_1.openai.chat.completions.create({
+                    model: model,
                     messages: messagesRef.current,
-                    model,
                     tools: definitions.length > 0 ? definitions : undefined,
-                    tool_choice: 'auto',
-                    stream: false,
+                    tool_choice: definitions.length > 0 ? 'auto' : undefined,
                 });
+                if (chatCompletion.usage?.total_tokens) {
+                    setUsageTokens(chatCompletion.usage.total_tokens);
+                }
                 const responseMessage = chatCompletion.choices[0].message;
+                if (!responseMessage) {
+                    addLog({ type: 'system', text: 'Empty response from OpenAI.', tone: 'error' });
+                    isAgentFinished = true;
+                    break;
+                }
                 messagesRef.current.push(responseMessage);
                 if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
                     for (const toolCall of responseMessage.tool_calls) {
@@ -200,7 +367,6 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
                         const functionName = toolCall.function.name;
                         const functionArgs = tryParseToolArguments(toolCall.function.arguments);
                         const argsText = JSON.stringify(functionArgs, null, 2);
-                        addLog({ type: 'tool', name: functionName, args: argsText });
                         setActivity(`running ${functionName}`);
                         let functionResponse = '';
                         let isError = false;
@@ -262,75 +428,134 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
             return;
         const [next, ...rest] = queue;
         setQueue(rest);
-        void runTurn(next);
+        setCurrentTask(next);
+        void runTurn(next).then(() => {
+            setCurrentTask(null);
+        });
     }, [busy, queue, runTurn]);
+    // calculate very rough token estimate based on message strings
+    const roughTokenEstimate = (0, react_1.useMemo)(() => {
+        if (usageTokens !== null) {
+            if (usageTokens > 1000000)
+                return `${(usageTokens / 1000000).toFixed(1)}M`;
+            if (usageTokens > 1000)
+                return `${(usageTokens / 1000).toFixed(1)}K`;
+            return `${usageTokens}`;
+        }
+        if (turnCount === 0) {
+            return '0';
+        }
+        // Conservative heuristic estimation if API doesn't return usage.
+        // Assumes that tokens can be less dense than 4 chars per token for CJK/code.
+        // Using ~2.5 characters per token as a conservative baseline to avoid underreporting.
+        const text = messagesRef.current.map(m => m.content ? (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) : '').join(' ');
+        const estimatedTokens = Math.ceil(text.length / 2.5);
+        if (estimatedTokens > 1000000)
+            return `${(estimatedTokens / 1000000).toFixed(1)}M`;
+        if (estimatedTokens > 1000)
+            return `${(estimatedTokens / 1000).toFixed(1)}K`;
+        return `${estimatedTokens}`;
+    }, [usageTokens, turnCount, messagesRef.current.length, busy]);
+    const rightStatusText = `context: ${roughTokenEstimate} tokens`;
     return (react_1.default.createElement(ink_1.Box, { flexDirection: "column" },
         react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
             react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, "Agent CLI"),
-            react_1.default.createElement(ink_1.Text, { color: "gray" }, "interactive workspace agent"),
             react_1.default.createElement(ink_1.Text, null,
                 react_1.default.createElement(ink_1.Text, { color: "gray" }, "model "),
                 react_1.default.createElement(ink_1.Text, null, model)),
             react_1.default.createElement(ink_1.Text, null,
                 react_1.default.createElement(ink_1.Text, { color: "gray" }, "cwd "),
-                react_1.default.createElement(ink_1.Text, null, formatLocation(process.cwd()))),
-            react_1.default.createElement(ink_1.Text, { color: "green" },
-                "ready ",
-                skills.length,
-                " skills | ",
-                coreToolCount,
-                " tools + activate_skill | /help for commands")),
-        react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 }, logs.length === 0 ? (react_1.default.createElement(ink_1.Text, { color: "gray" }, isRawModeSupported
-            ? 'Ask a question. You can keep typing while the agent works.'
-            : 'This UI needs an interactive terminal to accept keyboard input.')) : (logs.map((entry, index) => react_1.default.createElement(LogLine, { key: index, entry: entry })))),
+                react_1.default.createElement(ink_1.Text, null, currentCwd)),
+            react_1.default.createElement(ink_1.Box, { marginTop: 1 },
+                react_1.default.createElement(ink_1.Text, { color: "green" },
+                    "Welcome to Agent CLI! Type your question to start or enter ",
+                    react_1.default.createElement(ink_1.Text, { bold: true }, "/help"),
+                    " to view available commands."))),
+        react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 }, logs.map((entry, index) => react_1.default.createElement(LogLine, { key: index, entry: entry, terminalWidth: terminalWidth }))),
         react_1.default.createElement(ink_1.Box, { flexDirection: "column" },
+            currentTask && (react_1.default.createElement(ink_1.Box, { marginBottom: 0, width: terminalWidth },
+                react_1.default.createElement(ink_1.Text, { color: "cyan", wrap: "truncate" },
+                    "task: ",
+                    currentTask))),
+            react_1.default.createElement(ink_1.Box, { justifyContent: "space-between" },
+                react_1.default.createElement(ink_1.Text, null,
+                    react_1.default.createElement(ink_1.Text, { color: busy ? 'yellow' : 'green' }, busy ? 'working' : 'ready'),
+                    busy && react_1.default.createElement(ink_1.Text, { color: "gray" },
+                        " ",
+                        activity),
+                    queue.length > 0 && react_1.default.createElement(ink_1.Text, { color: "yellow" },
+                        " | queued: ",
+                        queue.length)),
+                react_1.default.createElement(ink_1.Text, { color: "gray" }, rightStatusText)),
             react_1.default.createElement(ink_1.Text, null,
-                react_1.default.createElement(ink_1.Text, { color: busy ? 'yellow' : 'green' }, busy ? 'working' : 'ready'),
-                react_1.default.createElement(ink_1.Text, { color: "gray" },
-                    " ",
-                    activity),
-                queue.length > 0 && react_1.default.createElement(ink_1.Text, { color: "yellow" },
-                    " | queued ",
-                    queue.length),
-                turnCount > 0 && react_1.default.createElement(ink_1.Text, { color: "gray" },
-                    " | turns ",
-                    turnCount)),
+                react_1.default.createElement(ink_1.Text, { color: "gray" }, '─'.repeat(terminalWidth))),
             react_1.default.createElement(ink_1.Text, null,
-                react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, "agent"),
-                react_1.default.createElement(ink_1.Text, { color: "gray" }, " > "),
+                react_1.default.createElement(ink_1.Text, { color: inputMode === 'command' ? 'yellow' : 'green', bold: true }, inputMode === 'command' ? '! ' : '❯ '),
                 react_1.default.createElement(ink_1.Text, null, input),
-                react_1.default.createElement(ink_1.Text, { color: "cyan" }, "\u2588")))));
+                react_1.default.createElement(ink_1.Text, { color: inputMode === 'command' ? 'yellow' : 'green' }, inputMode === 'command' ? '_' : '█')),
+            react_1.default.createElement(ink_1.Text, null,
+                react_1.default.createElement(ink_1.Text, { color: "gray" }, '─'.repeat(terminalWidth))))));
 }
-function LogLine({ entry }) {
+function LogLine({ entry, terminalWidth }) {
     if (entry.type === 'user') {
+        const prefix = '❯ ';
+        const textWithSpaces = ` ${entry.text} `;
+        const visibleWidth = (0, string_width_1.default)(textWithSpaces);
+        const paddingLength = Math.max(0, terminalWidth - (0, string_width_1.default)(prefix) - visibleWidth);
+        const paddedText = textWithSpaces + ' '.repeat(paddingLength);
         return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
             react_1.default.createElement(ink_1.Text, null,
-                react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, "you"),
-                react_1.default.createElement(ink_1.Text, { color: "gray" }, " \u2500 "),
-                react_1.default.createElement(ink_1.Text, null, entry.text))));
+                react_1.default.createElement(ink_1.Text, { color: "green", bold: true }, prefix),
+                react_1.default.createElement(ink_1.Text, { backgroundColor: "gray", color: "white" }, paddedText))));
     }
     if (entry.type === 'assistant') {
         return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
-            react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, "agent"),
+            react_1.default.createElement(ink_1.Text, null,
+                react_1.default.createElement(ink_1.Text, { color: "magenta", bold: true }, "\u25CF "),
+                react_1.default.createElement(ink_1.Text, { color: "magenta", bold: true }, "Agent")),
             react_1.default.createElement(MarkdownDisplay_1.MarkdownDisplay, { text: entry.text })));
     }
     if (entry.type === 'tool') {
+        const isError = entry.isError === true;
+        const tone = isError ? 'error' : 'normal';
+        const status = isError ? '✖' : '✔';
+        const color = isError ? 'red' : 'green';
         return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
             react_1.default.createElement(ink_1.Text, null,
-                react_1.default.createElement(ink_1.Text, { color: "yellow" }, "tool "),
-                react_1.default.createElement(ink_1.Text, { bold: true }, entry.name)),
-            react_1.default.createElement(ink_1.Text, { color: "gray" }, entry.args),
-            entry.result !== undefined && (react_1.default.createElement(ink_1.Text, { color: entry.isError ? 'red' : 'green' },
-                entry.isError ? 'error ' : 'done ',
-                react_1.default.createElement(ink_1.Text, { color: "gray" }, compact(entry.result))))));
+                react_1.default.createElement(ink_1.Text, { color: color, bold: true },
+                    status,
+                    " "),
+                react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, entry.name)),
+            react_1.default.createElement(ink_1.Text, null,
+                react_1.default.createElement(ink_1.Text, { color: "gray" }, "args: "),
+                react_1.default.createElement(ink_1.Text, null, truncate(entry.args, 300))),
+            entry.result && (react_1.default.createElement(ink_1.Text, null,
+                react_1.default.createElement(ink_1.Text, { color: "gray" }, "result: "),
+                react_1.default.createElement(ink_1.Text, null, truncate(entry.result, 500))))));
     }
-    const color = entry.tone === 'error'
-        ? 'red'
-        : entry.tone === 'warning'
-            ? 'yellow'
-            : entry.tone === 'success'
-                ? 'green'
-                : 'gray';
-    return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
-        react_1.default.createElement(ink_1.Text, { color: color }, entry.text)));
+    if (entry.type === 'system') {
+        let color = 'green';
+        if (entry.tone === 'warning')
+            color = 'yellow';
+        if (entry.tone === 'error')
+            color = 'red';
+        const textColor = entry.tone === 'error'
+            ? 'red'
+            : entry.tone === 'warning'
+                ? 'yellow'
+                : entry.tone === 'success'
+                    ? 'green'
+                    : 'gray';
+        // 对于 'queued:' 开头的警告信息，不显示 Agent 头部，直接显示文本内容
+        if (entry.text.startsWith('queued:') || entry.hidePrefix) {
+            return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
+                react_1.default.createElement(ink_1.Text, { color: textColor }, entry.text)));
+        }
+        return (react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 },
+            react_1.default.createElement(ink_1.Text, null,
+                react_1.default.createElement(ink_1.Text, { color: "cyan", bold: true }, "\u25CF "),
+                react_1.default.createElement(ink_1.Text, { color: textColor, bold: true }, "Agent")),
+            react_1.default.createElement(ink_1.Text, { color: textColor }, entry.text)));
+    }
+    return null;
 }

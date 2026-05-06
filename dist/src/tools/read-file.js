@@ -36,34 +36,41 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReadFileTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
-class ReadFileTool extends types_1.Tool {
-    name = "read_file";
-    description = "ReadFile: Reads the contents of a file in the workspace.";
+class ReadFileTool {
+    name = 'read_file';
+    description = 'Read the contents of a file.';
     parameters = {
         type: "object",
         properties: {
             filePath: {
                 type: "string",
-                description: "The path to the file to read (relative to the workspace root).",
+                description: "File to read, relative to current working directory.",
             },
         },
         required: ["filePath"],
     };
-    /**
-     * 临时硬编码的安全沙箱目录，防止模型随意读取系统文件。
-     */
-    workspaceDir = path.resolve(process.cwd(), 'workspace_test');
+    get definition() {
+        return {
+            type: 'function',
+            function: {
+                name: this.name,
+                description: this.description,
+                parameters: this.parameters,
+            },
+        };
+    }
+    get workspaceDir() {
+        return process.cwd();
+    }
     async execute(args) {
         try {
-            // 解析绝对路径，确保文件在 workspace_test 范围内
+            // 解析绝对路径，确保文件在当前工作目录范围内
             const absolutePath = path.resolve(this.workspaceDir, args.filePath);
-            // 安全检查：防止目录穿越 (e.g. "../../../etc/passwd")
             if (!absolutePath.startsWith(this.workspaceDir)) {
-                return JSON.stringify({ error: `Permission denied: Cannot read outside of workspace_test directory.` });
+                return JSON.stringify({ error: `Permission denied: Cannot read outside of workspace directory.` });
             }
-            const content = await fs.readFile(absolutePath, 'utf-8');
-            return content;
+            const fileContent = await fs.readFile(absolutePath, 'utf-8');
+            return JSON.stringify({ content: fileContent });
         }
         catch (error) {
             return JSON.stringify({ error: `Failed to read file: ${error.message}` });

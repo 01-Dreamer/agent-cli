@@ -42,20 +42,20 @@ exports.walkFiles = walkFiles;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
 function getWorkspaceDir() {
-    return path.resolve(process.cwd(), 'workspace_test');
+    return process.cwd();
 }
-function resolveWorkspacePath(inputPath = '.') {
+function resolveWorkspacePath(targetPath) {
     const workspaceDir = getWorkspaceDir();
-    const absolutePath = path.resolve(workspaceDir, inputPath);
-    const relative = path.relative(workspaceDir, absolutePath);
-    if (relative === '..' || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
+    const absolutePath = path.resolve(workspaceDir, targetPath);
+    if (!absolutePath.startsWith(workspaceDir)) {
         return {
+            valid: false,
             absolutePath,
             workspaceDir,
-            error: `Permission denied: Cannot access outside of workspace_test directory.`,
+            error: `Permission denied: Cannot access outside of the current working directory.`,
         };
     }
-    return { absolutePath, workspaceDir };
+    return { valid: true, absolutePath, workspaceDir };
 }
 function toPosixPath(filePath) {
     return filePath.split(path.sep).join('/');
@@ -100,7 +100,7 @@ function matchesAnyGlob(relativePath, patterns = []) {
     const normalizedPath = toPosixPath(relativePath);
     return patterns.some((pattern) => globToRegExp(pattern).test(normalizedPath));
 }
-async function walkFiles(rootDir, options) {
+async function walkFiles(dir, options) {
     const ignoreDirs = new Set(options?.ignoreDirs ?? ['.git', 'node_modules']);
     const files = [];
     async function walk(currentDir) {
@@ -117,6 +117,6 @@ async function walkFiles(rootDir, options) {
             }
         }
     }
-    await walk(rootDir);
+    await walk(dir);
     return files;
 }

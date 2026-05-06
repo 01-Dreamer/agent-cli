@@ -1,47 +1,53 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { Tool } from '../types';
+import OpenAI from 'openai';
 
-export interface ListDirectoryArgs {
-    dirPath?: string;
-}
-
-export class ListDirectoryTool extends Tool<ListDirectoryArgs> {
-    readonly name = "list_directory";
-    readonly description = "ListDirectory: Lists the files and folders in a workspace directory.";
-    readonly parameters = {
+export class ListDirectoryTool implements Tool<any> {
+    name = 'ls';
+    description = 'List files and directories in a given path.';
+    parameters = {
         type: "object",
         properties: {
-            dirPath: {
-                type: "string",
-                description: "The path of the directory to list (relative to the workspace root). Defaults to the root directory if empty.",
+            path: {
+                type: 'string',
+                description: 'The path to list (relative to the current directory). Defaults to the current directory if empty.',
             },
-        }
-        // no required parameters since we allow empty dirPath
+        },
+        required: [],
     };
 
-    /**
-     * 临时硬编码的安全沙箱目录
-     */
-    private readonly workspaceDir = path.resolve(process.cwd(), 'workspace_test');
+    get definition(): OpenAI.Chat.ChatCompletionTool {
+        return {
+            type: 'function',
+            function: {
+                name: this.name,
+                description: this.description,
+                parameters: this.parameters,
+            },
+        };
+    }
 
-    async execute(args: ListDirectoryArgs): Promise<string> {
+    private get workspaceDir(): string {
+        return process.cwd();
+    }
+
+    async execute(args: any): Promise<string> {
         try {
-            const targetPath = args.dirPath ? path.resolve(this.workspaceDir, args.dirPath) : this.workspaceDir;
-            
-            // 安全检查
-            if (!targetPath.startsWith(this.workspaceDir)) {
-                return JSON.stringify({ error: `Permission denied: Cannot list outside of workspace_test directory.` });
+            const targetPath = args.path || '.';
+            const absolutePath = path.resolve(this.workspaceDir, targetPath);
+
+            if (!absolutePath.startsWith(this.workspaceDir)) {
+                return JSON.stringify({ error: `Permission denied: Cannot list outside of workspace directory.` });
             }
 
-            const entries = await fs.readdir(targetPath, { withFileTypes: true });
-            
-            const filesAndDirs = entries.map(entry => ({
-                name: entry.name,
-                isDirectory: entry.isDirectory()
+            const files = await fs.readdir(absolutePath, { withFileTypes: true });
+            const fileDetails = files.map(file => ({
+                name: file.name,
+                isDirectory: file.isDirectory(),
             }));
 
-            return JSON.stringify({ path: args.dirPath || ".", items: filesAndDirs });
+            return JSON.stringify({ path: targetPath, items: fileDetails });
         } catch (error: any) {
             return JSON.stringify({ error: `Failed to list directory: ${error.message}` });
         }

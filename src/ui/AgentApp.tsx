@@ -4,6 +4,14 @@ import OpenAI from 'openai';
 import { openai } from '../api/openai';
 import { SkillDefinition } from '../skills/skillLoader';
 import { MarkdownDisplay } from './MarkdownDisplay';
+import stringWidth from 'string-width';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import * as path from 'path';
+import * as fs from 'fs/promises';
+import { existsSync, statSync } from 'fs';
+
+const execAsync = promisify(exec);
 
 type ToolImplementation = (args: any) => Promise<string> | string;
 
@@ -20,9 +28,11 @@ type LogEntry =
     | { type: 'user'; text: string }
     | { type: 'assistant'; text: string }
     | { type: 'tool'; name: string; args: string; result?: string; isError?: boolean }
-    | { type: 'system'; text: string; tone?: 'normal' | 'success' | 'warning' | 'error' };
+    | { type: 'system'; text: string; tone?: 'normal' | 'success' | 'warning' | 'error'; hidePrefix?: boolean };
 
-const MAX_STEPS = 10;
+const MAX_STEPS = 30;
+// MAX_VISIBLE_LOGS 决定了屏幕上（Ink框架的UI上）最大能够同时渲染/记忆的历史日志条数。
+// 当日志超过这个数量时，最旧的日志会被移出屏幕（不在界面上显示），以防止终端占用过大内存卡顿。
 const MAX_VISIBLE_LOGS = 80;
 
 function truncate(value: string, maxLength: number): string {
@@ -44,7 +54,9 @@ function renderHelp(): string {
         '/skills list discovered Agent skills',
         '/tools  list tools exposed to the model',
         '/clear  clear the screen',
-        'exit    close the session',
+        '/cd     change current working directory (e.g., /cd ../some-folder)',
+        '/pwd    show current working directory',
+        '/exit   close the session',
     ].join('\n');
 }
 
@@ -87,17 +99,30 @@ export function AgentApp({
 }: AgentAppProps) {
     const { exit } = useApp();
     const { isRawModeSupported } = useStdin();
+    const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
     const [input, setInput] = useState('');
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [queue, setQueue] = useState<string[]>([]);
+    const [currentTask, setCurrentTask] = useState<string | null>(null);
+    const [usageTokens, setUsageTokens] = useState<number | null>(null);
     const [busy, setBusy] = useState(false);
     const [activity, setActivity] = useState('ready');
     const [turnCount, setTurnCount] = useState(0);
+    const [currentCwd, setCurrentCwd] = useState(process.cwd());
+    const [inputMode, setInputMode] = useState<'chat' | 'command'>('chat');
 
     const messagesRef = useRef<OpenAI.Chat.ChatCompletionMessageParam[]>([
         { role: 'system', content: systemPrompt },
     ]);
     const processingRef = useRef(false);
+
+    useEffect(() => {
+        const handleResize = () => setTerminalWidth(process.stdout.columns || 80);
+        process.stdout.on('resize', handleResize);
+        return () => {
+            process.stdout.off('resize', handleResize);
+        };
+    }, []);
 
     const coreToolCount = useMemo(
         () => toolNames.filter((name) => name !== 'activate_skill').length,
@@ -109,9 +134,10 @@ export function AgentApp({
     }, []);
 
     const handleCommand = useCallback((value: string): boolean => {
-        const normalized = value.trim().toLowerCase();
+        const trimmed = value.trim();
+        const normalized = trimmed.toLowerCase();
 
-        if (normalized === 'exit' || normalized === 'quit') {
+        if (normalized === '/exit' || normalized === '/quit') {
             addLog({ type: 'system', text: 'Agent CLI session closed.', tone: 'success' });
             exit();
             return true;
@@ -137,8 +163,63 @@ export function AgentApp({
             return true;
         }
 
+        if (normalized === '/pwd') {
+            addLog({ type: 'system', text: `Current directory: ${process.cwd()}`, tone: 'normal' });
+            return true;
+        }
+
+        if (normalized.startsWith('/cd')) {
+            const parts = trimmed.split(/\s+/);
+            if (parts.length < 2) {
+                addLog({ type: 'system', text: `Usage: /cd <path>\nCurrent directory: ${process.cwd()}`, tone: 'warning' });
+                return true;
+            }
+            
+            const targetPath = parts.slice(1).join(' ');
+            try {
+                process.chdir(targetPath);
+                setCurrentCwd(process.cwd());
+                addLog({ type: 'system', text: `Changed directory to: ${process.cwd()}`, tone: 'success' });
+                
+                // You may want to update the system prompt context internally in the future
+                // or just let tools resolve process.cwd() dynamically as we have refactored them to do.
+            } catch (err: any) {
+                addLog({ type: 'system', text: `cd failed: ${err.message}`, tone: 'error' });
+            }
+            return true;
+        }
+
         return false;
     }, [addLog, exit, skills, toolNames]);
+
+    const handleLocalCommand = useCallback(async (cmd: string) => {
+        if (!cmd.trim()) return;
+        addLog({ type: 'system', text: `! ${cmd}`, tone: 'warning', hidePrefix: true });
+        setBusy(true);
+
+        if (cmd.trim().startsWith('cd ')) {
+            const targetPath = cmd.trim().substring(3).trim();
+            try {
+                process.chdir(path.resolve(currentCwd, targetPath));
+                setCurrentCwd(process.cwd());
+            } catch (err: any) {
+                addLog({ type: 'system', text: `cd failed: ${err.message}`, tone: 'error', hidePrefix: true });
+            }
+            setBusy(false);
+            return;
+        }
+
+        try {
+            const { stdout, stderr } = await execAsync(cmd, { cwd: currentCwd, shell: '/bin/bash' });
+            if (stdout) addLog({ type: 'system', text: stdout.trimEnd(), tone: 'normal', hidePrefix: true });
+            if (stderr) addLog({ type: 'system', text: stderr.trimEnd(), tone: 'warning', hidePrefix: true });
+            if (!stdout && !stderr) addLog({ type: 'system', text: 'Command executed successfully.', tone: 'success', hidePrefix: true });
+        } catch (error: any) {
+            addLog({ type: 'system', text: `Error: ${error.message}\n${error.stdout || ''}\n${error.stderr || ''}`.trimEnd(), tone: 'error', hidePrefix: true });
+        } finally {
+            setBusy(false);
+        }
+    }, [addLog, currentCwd]);
 
     const submitInput = useCallback((value: string) => {
         const trimmed = value.trim();
@@ -158,7 +239,25 @@ export function AgentApp({
             return;
         }
 
+        if (key.escape) {
+            if (inputMode === 'command') {
+                setInputMode('chat');
+                return;
+            }
+            return;
+        }
+
+        if (inputMode === 'chat' && input === '' && (value === '!' || value === '！')) {
+            setInputMode('command');
+            return;
+        }
+
         if (key.return || value === '\r' || value === '\n') {
+            if (inputMode === 'command') {
+                handleLocalCommand(input);
+                setInput('');
+                return;
+            }
             submitInput(input);
             setInput('');
             return;
@@ -168,10 +267,17 @@ export function AgentApp({
             const normalizedValue = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             const parts = normalizedValue.split('\n');
             const firstSubmission = `${input}${parts[0]}`;
-            submitInput(firstSubmission);
-
-            for (const queuedSubmission of parts.slice(1, -1)) {
-                submitInput(queuedSubmission);
+            
+            if (inputMode === 'command') {
+                handleLocalCommand(firstSubmission);
+                for (const queuedSubmission of parts.slice(1, -1)) {
+                    handleLocalCommand(queuedSubmission);
+                }
+            } else {
+                submitInput(firstSubmission);
+                for (const queuedSubmission of parts.slice(1, -1)) {
+                    submitInput(queuedSubmission);
+                }
             }
 
             setInput(parts.at(-1) ?? '');
@@ -183,7 +289,63 @@ export function AgentApp({
             return;
         }
 
-        if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow || key.tab || key.escape) {
+        if (key.tab) {
+            // 如果处于输入路径状态下，尝试使用简单的 Tab 补全目录
+            if (input.startsWith('/cd ') || inputMode === 'command') {
+                const parts = input.split(' ');
+                const lastParam = parts[parts.length - 1];
+
+                try {
+                    let searchDir = currentCwd;
+                    let filePrefix = lastParam;
+
+                    if (lastParam.startsWith('/')) {
+                        searchDir = path.dirname(lastParam) || '/';
+                        filePrefix = path.basename(lastParam);
+                    } else if (lastParam.includes('/')) {
+                        searchDir = path.resolve(currentCwd, path.dirname(lastParam));
+                        filePrefix = path.basename(lastParam);
+                    } else if (lastParam === '.' || lastParam === '..') {
+                        return;
+                    }
+
+                    // Shell 模式下补全如果没有前缀就是空串寻找整个目录
+                    filePrefix = filePrefix || '';
+
+                    if (!existsSync(searchDir)) return;
+
+                    const files = require('fs').readdirSync(searchDir);
+                    const matches = files.filter((f: string) => f.startsWith(filePrefix));
+                    
+                    if (matches.length === 1) {
+                        const match = matches[0];
+                        const fullMatchPath = path.join(searchDir, match);
+                        const isDir = statSync(fullMatchPath).isDirectory();
+                        const suffix = isDir ? '/' : '';
+
+                        const completedSuffix = match.slice(filePrefix.length) + suffix;
+                        setInput((current) => current + completedSuffix);
+                    } else if (matches.length > 1) {
+                        addLog({
+                            type: 'system',
+                            text: matches.map((m: string) => {
+                                try {
+                                    return statSync(path.join(searchDir, m)).isDirectory() ? `${m}/` : m;
+                                } catch(e) {
+                                    return m;
+                                }
+                            }).join('  '),
+                            tone: 'normal',
+                            hidePrefix: true
+                        });
+                    }
+                } catch(e) {
+                }
+            }
+            return;
+        }
+
+        if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow || key.escape) {
             return;
         }
 
@@ -201,23 +363,33 @@ export function AgentApp({
         addLog({ type: 'user', text: userInput });
         messagesRef.current.push({ role: 'user', content: userInput });
 
-        try {
-            let isAgentFinished = false;
-            let stepCount = 0;
+        let stepCount = 0;
+        let isAgentFinished = false;
 
+        try {
             while (!isAgentFinished && stepCount < MAX_STEPS) {
-                stepCount += 1;
-                setActivity(stepCount > 1 ? 'thinking with tool results' : 'thinking');
+                stepCount++;
+                setActivity('thinking');
 
                 const chatCompletion = await openai.chat.completions.create({
+                    model: model,
                     messages: messagesRef.current,
-                    model,
                     tools: definitions.length > 0 ? definitions : undefined,
-                    tool_choice: 'auto',
-                    stream: false,
+                    tool_choice: definitions.length > 0 ? 'auto' : undefined,
                 });
+                
+                if (chatCompletion.usage?.total_tokens) {
+                    setUsageTokens(chatCompletion.usage.total_tokens);
+                }
 
                 const responseMessage = chatCompletion.choices[0].message;
+
+                if (!responseMessage) {
+                    addLog({ type: 'system', text: 'Empty response from OpenAI.', tone: 'error' });
+                    isAgentFinished = true;
+                    break;
+                }
+
                 messagesRef.current.push(responseMessage);
 
                 if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
@@ -228,7 +400,6 @@ export function AgentApp({
                         const functionArgs = tryParseToolArguments(toolCall.function.arguments);
                         const argsText = JSON.stringify(functionArgs, null, 2);
 
-                        addLog({ type: 'tool', name: functionName, args: argsText });
                         setActivity(`running ${functionName}`);
 
                         let functionResponse = '';
@@ -290,108 +461,182 @@ export function AgentApp({
 
         const [next, ...rest] = queue;
         setQueue(rest);
-        void runTurn(next);
+        setCurrentTask(next);
+        void runTurn(next).then(() => {
+            setCurrentTask(null);
+        });
     }, [busy, queue, runTurn]);
 
+    // calculate very rough token estimate based on message strings
+    const roughTokenEstimate = useMemo(() => {
+        if (usageTokens !== null) {
+            if (usageTokens > 1000000) return `${(usageTokens / 1000000).toFixed(1)}M`;
+            if (usageTokens > 1000) return `${(usageTokens / 1000).toFixed(1)}K`;
+            return `${usageTokens}`;
+        }
+        
+        if (turnCount === 0) {
+            return '0';
+        }
+
+        // Conservative heuristic estimation if API doesn't return usage.
+        // Assumes that tokens can be less dense than 4 chars per token for CJK/code.
+        // Using ~2.5 characters per token as a conservative baseline to avoid underreporting.
+        const text = messagesRef.current.map(m => m.content ? (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) : '').join(' ');
+        const estimatedTokens = Math.ceil(text.length / 2.5);
+
+        if (estimatedTokens > 1000000) return `${(estimatedTokens / 1000000).toFixed(1)}M`;
+        if (estimatedTokens > 1000) return `${(estimatedTokens / 1000).toFixed(1)}K`;
+        return `${estimatedTokens}`;
+
+    }, [usageTokens, turnCount, messagesRef.current.length, busy]);
+
+    const rightStatusText = `context: ${roughTokenEstimate} tokens`;
+    
     return (
         <Box flexDirection="column">
             <Box flexDirection="column" marginBottom={1}>
                 <Text color="cyan" bold>Agent CLI</Text>
-                <Text color="gray">interactive workspace agent</Text>
                 <Text>
                     <Text color="gray">model </Text>
                     <Text>{model}</Text>
                 </Text>
                 <Text>
                     <Text color="gray">cwd </Text>
-                    <Text>{formatLocation(process.cwd())}</Text>
+                    <Text>{currentCwd}</Text>
                 </Text>
-                <Text color="green">
-                    ready {skills.length} skills | {coreToolCount} tools + activate_skill | /help for commands
-                </Text>
+                <Box marginTop={1}>
+                    <Text color="green">
+                        Welcome to Agent CLI! Type your question to start or enter <Text bold>/help</Text> to view available commands.
+                    </Text>
+                </Box>
             </Box>
 
             <Box flexDirection="column" marginBottom={1}>
-                {logs.length === 0 ? (
-                    <Text color="gray">
-                        {isRawModeSupported
-                            ? 'Ask a question. You can keep typing while the agent works.'
-                            : 'This UI needs an interactive terminal to accept keyboard input.'}
-                    </Text>
-                ) : (
-                    logs.map((entry, index) => <LogLine key={index} entry={entry} />)
-                )}
+                {logs.map((entry, index) => <LogLine key={index} entry={entry} terminalWidth={terminalWidth} />)}
             </Box>
 
             <Box flexDirection="column">
+                {currentTask && (
+                    <Box marginBottom={0} width={terminalWidth}>
+                        <Text color="cyan" wrap="truncate">
+                            task: {currentTask}
+                        </Text>
+                    </Box>
+                )}
+                <Box justifyContent="space-between">
+                    <Text>
+                        <Text color={busy ? 'yellow' : 'green'}>{busy ? 'working' : 'ready'}</Text>
+                        {busy && <Text color="gray"> {activity}</Text>}
+                        {queue.length > 0 && <Text color="yellow"> | queued: {queue.length}</Text>}
+                    </Text>
+                    <Text color="gray">{rightStatusText}</Text>
+                </Box>
                 <Text>
-                    <Text color={busy ? 'yellow' : 'green'}>{busy ? 'working' : 'ready'}</Text>
-                    <Text color="gray"> {activity}</Text>
-                    {queue.length > 0 && <Text color="yellow"> | queued {queue.length}</Text>}
-                    {turnCount > 0 && <Text color="gray"> | turns {turnCount}</Text>}
+                    <Text color="gray">{'─'.repeat(terminalWidth)}</Text>
                 </Text>
                 <Text>
-                    <Text color="cyan" bold>agent</Text>
-                    <Text color="gray"> &gt; </Text>
+                    <Text color={inputMode === 'command' ? 'yellow' : 'green'} bold>
+                        {inputMode === 'command' ? '! ' : '❯ '}
+                    </Text>
                     <Text>{input}</Text>
-                    <Text color="cyan">█</Text>
+                    <Text color={inputMode === 'command' ? 'yellow' : 'green'}>
+                        {inputMode === 'command' ? '_' : '█'}
+                    </Text>
+                </Text>
+                <Text>
+                    <Text color="gray">{'─'.repeat(terminalWidth)}</Text>
                 </Text>
             </Box>
         </Box>
     );
 }
 
-function LogLine({ entry }: { entry: LogEntry }) {
+function LogLine({ entry, terminalWidth }: { entry: LogEntry, terminalWidth: number }) {
     if (entry.type === 'user') {
+        const prefix = '❯ ';
+        const textWithSpaces = ` ${entry.text} `;
+        const visibleWidth = stringWidth(textWithSpaces);
+        const paddingLength = Math.max(0, terminalWidth - stringWidth(prefix) - visibleWidth);
+        const paddedText = textWithSpaces + ' '.repeat(paddingLength);
+        
         return (
             <Box flexDirection="column" marginBottom={1}>
                 <Text>
-                    <Text color="cyan" bold>you</Text>
-                    <Text color="gray"> ─ </Text>
-                    <Text>{entry.text}</Text>
+                    <Text color="green" bold>{prefix}</Text>
+                    <Text backgroundColor="gray" color="white">{paddedText}</Text>
                 </Text>
             </Box>
         );
     }
-
     if (entry.type === 'assistant') {
         return (
             <Box flexDirection="column" marginBottom={1}>
-                <Text color="cyan" bold>agent</Text>
+                <Text>
+                    <Text color="magenta" bold>● </Text>
+                    <Text color="magenta" bold>Agent</Text>
+                </Text>
                 <MarkdownDisplay text={entry.text} />
             </Box>
         );
     }
-
     if (entry.type === 'tool') {
+        const isError = entry.isError === true;
+        const tone = isError ? 'error' : 'normal';
+        const status = isError ? '✖' : '✔';
+        const color = isError ? 'red' : 'green';
+
         return (
             <Box flexDirection="column" marginBottom={1}>
                 <Text>
-                    <Text color="yellow">tool </Text>
-                    <Text bold>{entry.name}</Text>
+                    <Text color={color} bold>{status} </Text>
+                    <Text color="cyan" bold>{entry.name}</Text>
                 </Text>
-                <Text color="gray">{entry.args}</Text>
-                {entry.result !== undefined && (
-                    <Text color={entry.isError ? 'red' : 'green'}>
-                        {entry.isError ? 'error ' : 'done '}
-                        <Text color="gray">{compact(entry.result)}</Text>
+                <Text>
+                    <Text color="gray">args: </Text>
+                    <Text>{truncate(entry.args, 300)}</Text>
+                </Text>
+                {entry.result && (
+                    <Text>
+                        <Text color="gray">result: </Text>
+                        <Text>{truncate(entry.result, 500)}</Text>
                     </Text>
                 )}
             </Box>
         );
     }
+    if (entry.type === 'system') {
+        let color: 'green' | 'yellow' | 'red' = 'green';
+        if (entry.tone === 'warning') color = 'yellow';
+        if (entry.tone === 'error') color = 'red';
 
-    const color = entry.tone === 'error'
-        ? 'red'
-        : entry.tone === 'warning'
-            ? 'yellow'
-            : entry.tone === 'success'
-                ? 'green'
-                : 'gray';
+        const textColor = entry.tone === 'error'
+            ? 'red'
+            : entry.tone === 'warning'
+                ? 'yellow'
+                : entry.tone === 'success'
+                    ? 'green'
+                    : 'gray';
+                    
+        // 对于 'queued:' 开头的警告信息，不显示 Agent 头部，直接显示文本内容
+        if (entry.text.startsWith('queued:') || entry.hidePrefix) {
+            return (
+                <Box flexDirection="column" marginBottom={1}>
+                    <Text color={textColor}>{entry.text}</Text>
+                </Box>
+            );
+        }
 
-    return (
-        <Box flexDirection="column" marginBottom={1}>
-            <Text color={color}>{entry.text}</Text>
-        </Box>
-    );
+        return (
+            <Box flexDirection="column" marginBottom={1}>
+                <Text>
+                    <Text color="cyan" bold>● </Text>
+                    <Text color={textColor} bold>Agent</Text>
+                </Text>
+                <Text color={textColor}>{entry.text}</Text>
+            </Box>
+        );
+    }
+
+    return null;
 }

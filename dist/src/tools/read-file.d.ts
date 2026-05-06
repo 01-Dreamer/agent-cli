@@ -1,11 +1,9 @@
 import { Tool } from '../types';
-export interface ReadFileArgs {
-    filePath: string;
-}
-export declare class ReadFileTool extends Tool<ReadFileArgs> {
-    readonly name = "read_file";
-    readonly description = "ReadFile: Reads the contents of a file in the workspace.";
-    readonly parameters: {
+import OpenAI from 'openai';
+export declare class ReadFileTool implements Tool<any> {
+    name: string;
+    description: string;
+    parameters: {
         type: string;
         properties: {
             filePath: {
@@ -15,9 +13,7 @@ export declare class ReadFileTool extends Tool<ReadFileArgs> {
         };
         required: string[];
     };
-    /**
-     * 临时硬编码的安全沙箱目录，防止模型随意读取系统文件。
-     */
-    private readonly workspaceDir;
-    execute(args: ReadFileArgs): Promise<string>;
+    get definition(): OpenAI.Chat.ChatCompletionTool;
+    private get workspaceDir();
+    execute(args: any): Promise<string>;
 }

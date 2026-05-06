@@ -473,10 +473,10 @@ function AgentApp({ model, systemPrompt, skills, toolNames, definitions, impleme
                     " to view available commands."))),
         react_1.default.createElement(ink_1.Box, { flexDirection: "column", marginBottom: 1 }, logs.map((entry, index) => react_1.default.createElement(LogLine, { key: index, entry: entry, terminalWidth: terminalWidth }))),
         react_1.default.createElement(ink_1.Box, { flexDirection: "column" },
-            currentTask && (react_1.default.createElement(ink_1.Box, { marginBottom: 0, width: terminalWidth },
+            currentTask ? (react_1.default.createElement(ink_1.Box, { marginBottom: 0, width: terminalWidth },
                 react_1.default.createElement(ink_1.Text, { color: "cyan", wrap: "truncate" },
                     "task: ",
-                    currentTask))),
+                    currentTask))) : null,
             react_1.default.createElement(ink_1.Box, { justifyContent: "space-between" },
                 react_1.default.createElement(ink_1.Text, null,
                     react_1.default.createElement(ink_1.Text, { color: busy ? 'yellow' : 'green' }, busy ? 'working' : 'ready'),
@@ -529,9 +529,9 @@ function LogLine({ entry, terminalWidth }) {
             react_1.default.createElement(ink_1.Text, null,
                 react_1.default.createElement(ink_1.Text, { color: "gray" }, "args: "),
                 react_1.default.createElement(ink_1.Text, null, truncate(entry.args, 300))),
-            entry.result && (react_1.default.createElement(ink_1.Text, null,
+            entry.result ? (react_1.default.createElement(ink_1.Text, null,
                 react_1.default.createElement(ink_1.Text, { color: "gray" }, "result: "),
-                react_1.default.createElement(ink_1.Text, null, truncate(entry.result, 500))))));
+                react_1.default.createElement(ink_1.Text, null, truncate(entry.result, 500)))) : null));
     }
     if (entry.type === 'system') {
         let color = 'green';

@@ -517,13 +517,13 @@ export function AgentApp({
             </Box>
 
             <Box flexDirection="column">
-                {currentTask && (
+                {currentTask ? (
                     <Box marginBottom={0} width={terminalWidth}>
                         <Text color="cyan" wrap="truncate">
                             task: {currentTask}
                         </Text>
                     </Box>
-                )}
+                ) : null}
                 <Box justifyContent="space-between">
                     <Text>
                         <Text color={busy ? 'yellow' : 'green'}>{busy ? 'working' : 'ready'}</Text>
@@ -596,12 +596,12 @@ function LogLine({ entry, terminalWidth }: { entry: LogEntry, terminalWidth: num
                     <Text color="gray">args: </Text>
                     <Text>{truncate(entry.args, 300)}</Text>
                 </Text>
-                {entry.result && (
+                {entry.result ? (
                     <Text>
                         <Text color="gray">result: </Text>
                         <Text>{truncate(entry.result, 500)}</Text>
                     </Text>
-                )}
+                ) : null}
             </Box>
         );
     }

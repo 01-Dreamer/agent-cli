@@ -146,6 +146,8 @@ function calculateColumnWidths(table: TableBlock, maxTableWidth: number): number
 }
 
 function renderInline(text: string): React.ReactNode {
+    if (!text) return null;
+    
     const parts: React.ReactNode[] = [];
     const regex = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\[[^\]]+\]\([^)]+\))/g;
     let lastIndex = 0;
@@ -183,6 +185,10 @@ function renderInline(text: string): React.ReactNode {
 
     if (lastIndex < text.length) {
         parts.push(text.slice(lastIndex));
+    }
+
+    if (parts.length === 0) {
+        return null;
     }
 
     return parts;
@@ -367,11 +373,14 @@ export function MarkdownDisplay({ text }: { text: string }) {
             continue;
         }
 
-        blocks.push(
-            <Text key={index} wrap="wrap">
-                {renderInline(line)}
-            </Text>,
-        );
+        const inlineRendered = renderInline(line);
+        if (inlineRendered) {
+            blocks.push(
+                <Text key={index} wrap="wrap">
+                    {inlineRendered}
+                </Text>,
+            );
+        }
     }
 
     if (inCodeBlock) {

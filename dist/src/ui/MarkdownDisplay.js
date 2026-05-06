@@ -129,6 +129,8 @@ function calculateColumnWidths(table, maxTableWidth) {
     return widths;
 }
 function renderInline(text) {
+    if (!text)
+        return null;
     const parts = [];
     const regex = /(`[^`]+`|\*\*[^*]+\*\*|__[^_]+__|\[[^\]]+\]\([^)]+\))/g;
     let lastIndex = 0;
@@ -152,6 +154,9 @@ function renderInline(text) {
     }
     if (lastIndex < text.length) {
         parts.push(text.slice(lastIndex));
+    }
+    if (parts.length === 0) {
+        return null;
     }
     return parts;
 }
@@ -278,7 +283,10 @@ function MarkdownDisplay({ text }) {
             blocks.push(react_1.default.createElement(ink_1.Text, { key: index }, " "));
             continue;
         }
-        blocks.push(react_1.default.createElement(ink_1.Text, { key: index, wrap: "wrap" }, renderInline(line)));
+        const inlineRendered = renderInline(line);
+        if (inlineRendered) {
+            blocks.push(react_1.default.createElement(ink_1.Text, { key: index, wrap: "wrap" }, inlineRendered));
+        }
     }
     if (inCodeBlock) {
         flushCodeBlock('code-final');

@@ -36,8 +36,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ActivateSkillTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
-class ActivateSkillTool extends types_1.Tool {
+const tool_1 = require("./tool");
+class ActivateSkillTool extends tool_1.Tool {
     skillManager;
     name = 'activate_skill';
     description = 'ActivateSkill: Activates a discovered skill and returns its detailed instructions and available resources.';

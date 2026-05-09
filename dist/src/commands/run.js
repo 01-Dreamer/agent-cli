@@ -61,13 +61,23 @@ function createSystemPrompt(skillsPrompt) {
 
 - **System Context & Awareness:** You are running directly on the user's system via Node.js. For system facts (e.g. current date, OS architecture), you MUST use the \`shell\` tool to execute standard bash commands (like \`date\`, \`uname\`) rather than guessing, hallucinating, or searching the web.
 - **Tool Efficiency:** Minimize the total number of tool calls. If you need several pieces of information at once (e.g., system specs), write a single \`shell\` tool command using \`&&\` or \`;\` rather than calling the \`shell\` tool many separate times.
+- **Search Discipline:** Use \`web_search\` only for current, niche, uncertain, or source-sensitive information. For stable knowledge you already know, answer directly without searching.
 - **Non-Interactive Execution:** Do your best to complete the task at hand autonomously. Explain your thought process briefly, gather the information efficiently, and synthesize the result for the user.
 - **Skill Guidance:** Once a skill is activated via \`activate_skill\`, its instructions and resources are returned wrapped in \`<activated_skill>\` tags. You MUST treat the content within \`<instructions>\` as expert procedural guidance for the duration of the task.${skillsPrompt}`;
 }
-async function runAgent() {
+async function runAgent(options = {}) {
     if (!process.stdin.isTTY) {
-        console.error('Agent CLI Ink UI requires an interactive terminal. Please run `agent-cli run` directly in your shell.');
+        console.error('Agent CLI Ink UI requires an interactive terminal. Please run `agent-cli` directly in your shell.');
         return;
+    }
+    if (options.cwd) {
+        try {
+            process.chdir(path.resolve(options.cwd));
+        }
+        catch (error) {
+            console.error(`Failed to start Agent CLI in "${options.cwd}": ${error.message}`);
+            return;
+        }
     }
     const skillManager = new skillManager_1.SkillManager();
     await skillManager.discoverSkills({

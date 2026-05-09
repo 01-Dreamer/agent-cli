@@ -64,13 +64,13 @@ function renderSkills(skills: SkillDefinition[]): string {
     if (skills.length === 0) return 'No skills discovered.';
 
     return skills
-        .map((skill) => `${skill.name} - ${skill.description}\n  ${formatLocation(skill.location)}`)
+        .map((skill, index) => `[${index + 1}] ${skill.name} - ${skill.description}\n    ${formatLocation(skill.location)}`)
         .join('\n');
 }
 
 function renderTools(toolNames: string[]): string {
     return toolNames
-        .map((name) => `${name === 'activate_skill' ? 'skill' : 'tool'} ${name}`)
+        .map((name, index) => `[${index + 1}] ${name}`)
         .join('\n');
 }
 
@@ -89,6 +89,73 @@ function tryParseToolArguments(rawArguments: string): unknown {
     }
 }
 
+function stringToChars(value: string): string[] {
+    return Array.from(value);
+}
+
+function sliceChars(value: string, start: number, end?: number): string {
+    return stringToChars(value).slice(start, end).join('');
+}
+
+function clampCursor(cursor: number, value: string): number {
+    return Math.max(0, Math.min(cursor, stringToChars(value).length));
+}
+
+function insertAtCursor(value: string, cursor: number, insertValue: string): { text: string; cursor: number } {
+    const chars = stringToChars(value);
+    const safeCursor = Math.max(0, Math.min(cursor, chars.length));
+    const insertChars = stringToChars(insertValue);
+    return {
+        text: [...chars.slice(0, safeCursor), ...insertChars, ...chars.slice(safeCursor)].join(''),
+        cursor: safeCursor + insertChars.length,
+    };
+}
+
+function deleteBeforeCursor(value: string, cursor: number): { text: string; cursor: number } {
+    const chars = stringToChars(value);
+    const safeCursor = Math.max(0, Math.min(cursor, chars.length));
+    if (safeCursor === 0) return { text: value, cursor: safeCursor };
+
+    return {
+        text: [...chars.slice(0, safeCursor - 1), ...chars.slice(safeCursor)].join(''),
+        cursor: safeCursor - 1,
+    };
+}
+
+function deleteAtCursor(value: string, cursor: number): { text: string; cursor: number } {
+    const chars = stringToChars(value);
+    const safeCursor = Math.max(0, Math.min(cursor, chars.length));
+    if (safeCursor >= chars.length) return { text: value, cursor: safeCursor };
+
+    return {
+        text: [...chars.slice(0, safeCursor), ...chars.slice(safeCursor + 1)].join(''),
+        cursor: safeCursor,
+    };
+}
+
+function estimateTokensFromMessages(messages: unknown[]): number {
+    const text = messages
+        .map((message) => {
+            if (typeof message === 'string') return message;
+            try {
+                return JSON.stringify(message);
+            } catch {
+                return '';
+            }
+        })
+        .join(' ');
+
+    // Conservative heuristic if the API doesn't return usage. This avoids
+    // underreporting for CJK text and code-heavy messages.
+    return Math.ceil(text.length / 2.5);
+}
+
+function formatTokenCount(tokens: number): string {
+    if (tokens > 1000000) return `${(tokens / 1000000).toFixed(1)}M`;
+    if (tokens > 1000) return `${(tokens / 1000).toFixed(1)}K`;
+    return `${tokens}`;
+}
+
 export function AgentApp({
     model,
     systemPrompt,
@@ -101,13 +168,13 @@ export function AgentApp({
     const { isRawModeSupported } = useStdin();
     const [terminalWidth, setTerminalWidth] = useState(process.stdout.columns || 80);
     const [input, setInput] = useState('');
+    const [inputCursor, setInputCursor] = useState(0);
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const [queue, setQueue] = useState<string[]>([]);
     const [currentTask, setCurrentTask] = useState<string | null>(null);
-    const [usageTokens, setUsageTokens] = useState<number | null>(null);
+    const [usageTokens, setUsageTokens] = useState(0);
     const [busy, setBusy] = useState(false);
     const [activity, setActivity] = useState('ready');
-    const [turnCount, setTurnCount] = useState(0);
     const [currentCwd, setCurrentCwd] = useState(process.cwd());
     const [inputMode, setInputMode] = useState<'chat' | 'command'>('chat');
 
@@ -249,6 +316,7 @@ export function AgentApp({
 
         if (inputMode === 'chat' && input === '' && (value === '!' || value === '！')) {
             setInputMode('command');
+            setInputCursor(0);
             return;
         }
 
@@ -256,17 +324,20 @@ export function AgentApp({
             if (inputMode === 'command') {
                 handleLocalCommand(input);
                 setInput('');
+                setInputCursor(0);
                 return;
             }
             submitInput(input);
             setInput('');
+            setInputCursor(0);
             return;
         }
 
         if (value.includes('\r') || value.includes('\n')) {
             const normalizedValue = value.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
             const parts = normalizedValue.split('\n');
-            const firstSubmission = `${input}${parts[0]}`;
+            const insertedFirstLine = insertAtCursor(input, inputCursor, parts[0]);
+            const firstSubmission = insertedFirstLine.text;
             
             if (inputMode === 'command') {
                 handleLocalCommand(firstSubmission);
@@ -280,19 +351,31 @@ export function AgentApp({
                 }
             }
 
-            setInput(parts.at(-1) ?? '');
+            const nextInput = parts.at(-1) ?? '';
+            setInput(nextInput);
+            setInputCursor(stringToChars(nextInput).length);
             return;
         }
 
-        if (key.backspace || key.delete) {
-            setInput((current) => current.slice(0, -1));
+        if (key.backspace || (key.delete && !key.meta)) {
+            const next = deleteBeforeCursor(input, inputCursor);
+            setInput(next.text);
+            setInputCursor(next.cursor);
+            return;
+        }
+
+        if (key.delete && key.meta) {
+            const next = deleteAtCursor(input, inputCursor);
+            setInput(next.text);
+            setInputCursor(next.cursor);
             return;
         }
 
         if (key.tab) {
             // 如果处于输入路径状态下，尝试使用简单的 Tab 补全目录
             if (input.startsWith('/cd ') || inputMode === 'command') {
-                const parts = input.split(' ');
+                const inputBeforeCursor = sliceChars(input, 0, inputCursor);
+                const parts = inputBeforeCursor.split(' ');
                 const lastParam = parts[parts.length - 1];
 
                 try {
@@ -324,7 +407,9 @@ export function AgentApp({
                         const suffix = isDir ? '/' : '';
 
                         const completedSuffix = match.slice(filePrefix.length) + suffix;
-                        setInput((current) => current + completedSuffix);
+                        const next = insertAtCursor(input, inputCursor, completedSuffix);
+                        setInput(next.text);
+                        setInputCursor(next.cursor);
                     } else if (matches.length > 1) {
                         addLog({
                             type: 'system',
@@ -345,12 +430,24 @@ export function AgentApp({
             return;
         }
 
-        if (key.leftArrow || key.rightArrow || key.upArrow || key.downArrow || key.escape) {
+        if (key.leftArrow) {
+            setInputCursor((current) => Math.max(0, current - 1));
+            return;
+        }
+
+        if (key.rightArrow) {
+            setInputCursor((current) => clampCursor(current + 1, input));
+            return;
+        }
+
+        if (key.upArrow || key.downArrow || key.escape) {
             return;
         }
 
         if (value) {
-            setInput((current) => `${current}${value}`);
+            const next = insertAtCursor(input, inputCursor, value);
+            setInput(next.text);
+            setInputCursor(next.cursor);
         }
     }, { isActive: isRawModeSupported });
 
@@ -358,7 +455,6 @@ export function AgentApp({
         processingRef.current = true;
         setBusy(true);
         setActivity('thinking');
-        setTurnCount((count) => count + 1);
 
         addLog({ type: 'user', text: userInput });
         messagesRef.current.push({ role: 'user', content: userInput });
@@ -371,16 +467,13 @@ export function AgentApp({
                 stepCount++;
                 setActivity('thinking');
 
+                const requestMessages = [...messagesRef.current];
                 const chatCompletion = await openai.chat.completions.create({
                     model: model,
-                    messages: messagesRef.current,
+                    messages: requestMessages,
                     tools: definitions.length > 0 ? definitions : undefined,
                     tool_choice: definitions.length > 0 ? 'auto' : undefined,
                 });
-                
-                if (chatCompletion.usage?.total_tokens) {
-                    setUsageTokens(chatCompletion.usage.total_tokens);
-                }
 
                 const responseMessage = chatCompletion.choices[0].message;
 
@@ -389,6 +482,10 @@ export function AgentApp({
                     isAgentFinished = true;
                     break;
                 }
+
+                const tokenUsage = chatCompletion.usage?.total_tokens
+                    ?? estimateTokensFromMessages([...requestMessages, responseMessage]);
+                setUsageTokens((current) => current + tokenUsage);
 
                 messagesRef.current.push(responseMessage);
 
@@ -463,35 +560,19 @@ export function AgentApp({
         setQueue(rest);
         setCurrentTask(next);
         void runTurn(next).then(() => {
-            setCurrentTask(null);
+            setCurrentTask((current) => current === next ? null : current);
         });
     }, [busy, queue, runTurn]);
 
-    // calculate very rough token estimate based on message strings
-    const roughTokenEstimate = useMemo(() => {
-        if (usageTokens !== null) {
-            if (usageTokens > 1000000) return `${(usageTokens / 1000000).toFixed(1)}M`;
-            if (usageTokens > 1000) return `${(usageTokens / 1000).toFixed(1)}K`;
-            return `${usageTokens}`;
-        }
-        
-        if (turnCount === 0) {
-            return '0';
-        }
-
-        // Conservative heuristic estimation if API doesn't return usage.
-        // Assumes that tokens can be less dense than 4 chars per token for CJK/code.
-        // Using ~2.5 characters per token as a conservative baseline to avoid underreporting.
-        const text = messagesRef.current.map(m => m.content ? (typeof m.content === 'string' ? m.content : JSON.stringify(m.content)) : '').join(' ');
-        const estimatedTokens = Math.ceil(text.length / 2.5);
-
-        if (estimatedTokens > 1000000) return `${(estimatedTokens / 1000000).toFixed(1)}M`;
-        if (estimatedTokens > 1000) return `${(estimatedTokens / 1000).toFixed(1)}K`;
-        return `${estimatedTokens}`;
-
-    }, [usageTokens, turnCount, messagesRef.current.length, busy]);
+    const roughTokenEstimate = useMemo(() => formatTokenCount(usageTokens), [usageTokens]);
 
     const rightStatusText = `context: ${roughTokenEstimate} tokens`;
+    const inputChars = stringToChars(input);
+    const safeInputCursor = clampCursor(inputCursor, input);
+    const inputBeforeCursor = inputChars.slice(0, safeInputCursor).join('');
+    const inputCursorChar = inputChars[safeInputCursor] ?? '';
+    const inputAfterCursor = inputChars.slice(safeInputCursor + 1).join('');
+    const cursorColor = inputMode === 'command' ? 'yellow' : 'green';
     
     return (
         <Box flexDirection="column">
@@ -539,10 +620,15 @@ export function AgentApp({
                     <Text color={inputMode === 'command' ? 'yellow' : 'green'} bold>
                         {inputMode === 'command' ? '! ' : '❯ '}
                     </Text>
-                    <Text>{input}</Text>
-                    <Text color={inputMode === 'command' ? 'yellow' : 'green'}>
-                        {inputMode === 'command' ? '_' : '█'}
-                    </Text>
+                    <Text>{inputBeforeCursor}</Text>
+                    {inputCursorChar ? (
+                        <Text backgroundColor={cursorColor} color="black">{inputCursorChar}</Text>
+                    ) : (
+                        <Text color={cursorColor}>
+                            {inputMode === 'command' ? '_' : '█'}
+                        </Text>
+                    )}
+                    <Text>{inputAfterCursor}</Text>
                 </Text>
                 <Text>
                     <Text color="gray">{'─'.repeat(terminalWidth)}</Text>

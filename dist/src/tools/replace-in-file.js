@@ -36,9 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReplaceInFileTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
+const tool_1 = require("./tool");
 const utils_1 = require("./utils");
-class ReplaceInFileTool extends types_1.Tool {
+class ReplaceInFileTool extends tool_1.Tool {
     name = "replace_in_file";
     description = "ReplaceInFile: Replaces an exact string in a workspace file. Useful for precise edits without rewriting the whole file.";
     parameters = {

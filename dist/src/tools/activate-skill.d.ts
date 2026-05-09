@@ -1,4 +1,4 @@
-import { Tool } from '../types';
+import { Tool } from './tool';
 import { SkillManager } from '../skills/skillManager';
 export interface ActivateSkillArgs {
     name: string;

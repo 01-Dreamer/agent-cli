@@ -269,7 +269,7 @@ export function MarkdownDisplay({ text }: { text: string }) {
     const flushCodeBlock = (key: string) => {
         blocks.push(
             <Box key={key} flexDirection="column" marginY={1} paddingLeft={2} borderStyle="single" borderColor="gray">
-                {codeLanguage && <Text color="gray">{codeLanguage}</Text>}
+                {codeLanguage ? <Text color="gray">{codeLanguage}</Text> : null}
                 {codeLines.length === 0 ? (
                     <Text color="gray"> </Text>
                 ) : (

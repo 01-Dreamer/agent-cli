@@ -36,9 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GrepTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
+const tool_1 = require("./tool");
 const utils_1 = require("./utils");
-class GrepTool extends types_1.Tool {
+class GrepTool extends tool_1.Tool {
     name = "grep";
     description = "Grep: Searches file contents in the workspace using a regular expression.";
     parameters = {

@@ -6,10 +6,10 @@ import OpenAI from "openai";
 export abstract class Tool<TArgs = any> {
     /** 这里必须填写给大模型的固定名称，如 get_weather */
     abstract readonly name: string;
-    
+
     /** 工具的业务描叙 */
     abstract readonly description: string;
-    
+
     /** JSON Schema 的 parameters 描述 */
     abstract readonly parameters: Record<string, any>;
 

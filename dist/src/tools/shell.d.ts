@@ -1,4 +1,4 @@
-import { Tool } from '../types';
+import { Tool } from './tool';
 import OpenAI from 'openai';
 export declare class ShellTool implements Tool<any> {
     name: string;

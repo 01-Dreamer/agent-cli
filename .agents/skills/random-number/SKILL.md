@@ -8,8 +8,7 @@ Use this skill when the user asks for a random number, dice roll, lottery-style 
 
 Always use the `shell` tool to run the bundled script. Do not invent the number yourself.
 
-Use the `<base_directory>` value returned by `activate_skill` to build the
-script path. Run the script with this command shape:
+After activation, run:
 
 ```bash
 node <base_directory>/scripts/random-number.js MIN MAX

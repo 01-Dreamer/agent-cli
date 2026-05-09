@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { Tool } from '../types';
+import { Tool } from './tool';
 import { ReadFileTool } from './read-file';
 import { WriteFileTool } from './write-file';
 import { ListDirectoryTool } from './ls';

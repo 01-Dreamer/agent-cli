@@ -36,9 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GlobTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
+const tool_1 = require("./tool");
 const utils_1 = require("./utils");
-class GlobTool extends types_1.Tool {
+class GlobTool extends tool_1.Tool {
     name = "glob";
     description = "Glob: Finds files in the workspace by glob pattern.";
     parameters = {

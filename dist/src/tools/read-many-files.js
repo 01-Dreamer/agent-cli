@@ -36,9 +36,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.ReadManyFilesTool = void 0;
 const fs = __importStar(require("fs/promises"));
 const path = __importStar(require("path"));
-const types_1 = require("../types");
+const tool_1 = require("./tool");
 const utils_1 = require("./utils");
-class ReadManyFilesTool extends types_1.Tool {
+class ReadManyFilesTool extends tool_1.Tool {
     name = "read_many_files";
     description = "ReadManyFiles: Reads and concatenates multiple workspace files selected by glob patterns.";
     parameters = {

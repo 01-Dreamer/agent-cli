@@ -8,4 +8,4 @@ export const openai = new OpenAI({
     baseURL: process.env.OPENAI_BASE_URL,
 });
 
-export const DEFAULT_MODEL = process.env.MODEL_NAME || "deepseek-ai/DeepSeek-V3.2";
+export const DEFAULT_MODEL = process.env.MODEL_NAME;

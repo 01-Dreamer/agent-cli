@@ -1,4 +1,4 @@
-import { Tool } from '../types';
+import { Tool } from './tool';
 export interface GrepArgs {
     pattern: string;
     dirPath?: string;

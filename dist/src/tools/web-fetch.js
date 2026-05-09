@@ -1,8 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.WebFetchTool = void 0;
-const types_1 = require("../types");
-class WebFetchTool extends types_1.Tool {
+const tool_1 = require("./tool");
+class WebFetchTool extends tool_1.Tool {
     name = "web_fetch";
     description = "WebFetch: Fetches an http/https URL and returns readable text content. Does not require a special API key.";
     parameters = {

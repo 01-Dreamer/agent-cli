@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { Tool } from '../types';
+import { Tool } from './tool';
 import { SkillManager } from '../skills/skillManager';
 export declare function createToolRegistry(skillManager?: SkillManager): {
     definitions: OpenAI.Chat.Completions.ChatCompletionTool[];

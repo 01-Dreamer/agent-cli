@@ -1,6 +1,6 @@
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { Tool } from '../types';
+import { Tool } from './tool';
 import { matchesAnyGlob, resolveWorkspacePath, toPosixPath, walkFiles } from './utils';
 
 export interface GrepArgs {

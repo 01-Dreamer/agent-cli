@@ -211,7 +211,7 @@ function MarkdownDisplay({ text }) {
     let codeLines = [];
     const flushCodeBlock = (key) => {
         blocks.push(react_1.default.createElement(ink_1.Box, { key: key, flexDirection: "column", marginY: 1, paddingLeft: 2, borderStyle: "single", borderColor: "gray" },
-            codeLanguage && react_1.default.createElement(ink_1.Text, { color: "gray" }, codeLanguage),
+            codeLanguage ? react_1.default.createElement(ink_1.Text, { color: "gray" }, codeLanguage) : null,
             codeLines.length === 0 ? (react_1.default.createElement(ink_1.Text, { color: "gray" }, " ")) : (codeLines.map((line, index) => (react_1.default.createElement(ink_1.Text, { key: index, color: "yellow" }, line || ' '))))));
         codeLines = [];
         codeLanguage = '';
